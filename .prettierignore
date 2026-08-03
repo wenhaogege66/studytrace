@@ -1,0 +1,7 @@
+.next
+coverage
+node_modules
+output
+public/mediapipe/*.task
+public/mediapipe/wasm
+src/types/database.ts
