@@ -5,14 +5,37 @@
 begin;
 
 do $$
+declare
+  business_table text;
 begin
-  if has_table_privilege('anon', 'public.tasks', 'select') then
-    raise exception 'anon must not have SELECT on public.tasks';
-  end if;
+  foreach business_table in array array[
+    'public.tasks',
+    'public.study_sessions',
+    'public.behavior_events',
+    'public.reminder_events',
+    'public.reviews',
+    'public.user_settings'
+  ] loop
+    if has_table_privilege('anon', business_table, 'select') then
+      raise exception 'anon must not have SELECT on %', business_table;
+    end if;
 
-  if not has_table_privilege('authenticated', 'public.tasks', 'select,insert,update,delete') then
-    raise exception 'authenticated must have task CRUD privileges';
-  end if;
+    if not has_table_privilege(
+      'authenticated',
+      business_table,
+      'select,insert,update,delete'
+    ) then
+      raise exception 'authenticated must have CRUD privileges on %', business_table;
+    end if;
+
+    if has_table_privilege(
+      'authenticated',
+      business_table,
+      'truncate,references,trigger'
+    ) then
+      raise exception 'authenticated has unsafe privileges on %', business_table;
+    end if;
+  end loop;
 end;
 $$;
 
