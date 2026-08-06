@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -40,6 +41,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [checkVersion, setCheckVersion] = useState(0)
+  const beginPromiseRef = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
     let active = true
@@ -74,21 +76,32 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   }, [checkVersion, configured, mounted])
 
   const begin = useCallback(async (captchaToken?: string) => {
-    setStatus("starting")
-    setError(null)
-    const supabase = getSupabase()
-    const options = captchaToken ? { options: { captchaToken } } : undefined
-    const { data, error: signInError } =
-      await supabase.auth.signInAnonymously(options)
-    if (signInError || !data.user) {
-      setError(signInError?.message ?? "无法创建匿名体验")
-      setStatus("needs_gate")
-      throw signInError ?? new Error("无法创建匿名体验")
-    }
+    if (beginPromiseRef.current) return beginPromiseRef.current
 
-    await ensureSettings(data.user.id)
-    setUser(data.user)
-    setStatus("ready")
+    const operation = (async () => {
+      setStatus("starting")
+      setError(null)
+      const supabase = getSupabase()
+      const options = captchaToken ? { options: { captchaToken } } : undefined
+      const { data, error: signInError } =
+        await supabase.auth.signInAnonymously(options)
+      if (signInError || !data.user) {
+        setError(signInError?.message ?? "无法创建匿名体验")
+        setStatus("needs_gate")
+        throw signInError ?? new Error("无法创建匿名体验")
+      }
+
+      await ensureSettings(data.user.id)
+      setUser(data.user)
+      setStatus("ready")
+    })()
+
+    beginPromiseRef.current = operation
+    try {
+      await operation
+    } finally {
+      if (beginPromiseRef.current === operation) beginPromiseRef.current = null
+    }
   }, [])
 
   const value = useMemo<ExperienceContextValue>(

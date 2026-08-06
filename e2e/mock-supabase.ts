@@ -119,9 +119,9 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
 
 export async function installMockSupabase(
   page: Page,
-  options: { seedSession?: boolean } = {},
+  options: { seedSession?: boolean; seedSettings?: boolean } = {},
 ) {
-  const settings: Row[] = [settingRow()]
+  const settings: Row[] = options.seedSettings === false ? [] : [settingRow()]
   const tasks: Row[] = []
   const sessions: Row[] = []
   const behaviorEvents: Row[] = []

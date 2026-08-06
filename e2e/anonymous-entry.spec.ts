@@ -3,7 +3,10 @@ import { expect, test } from "@playwright/test"
 import { installMockSupabase } from "./mock-supabase"
 
 test("首次体验明确匿名数据边界并创建匿名会话", async ({ page }) => {
-  await installMockSupabase(page, { seedSession: false })
+  await installMockSupabase(page, {
+    seedSession: false,
+    seedSettings: false,
+  })
   await page.goto("/app")
 
   await expect(

@@ -34,7 +34,7 @@ export async function ensureSettings(userId: string) {
 
   const result = await supabase
     .from("user_settings")
-    .insert({ user_id: userId })
+    .upsert({ user_id: userId }, { onConflict: "user_id" })
     .select()
     .single()
   if (result.error) fail("初始化设置失败", result.error)
