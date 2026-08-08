@@ -38,6 +38,7 @@ yarn-error.log*
 .vercel
 
 # browser verification artifacts
+/.playwright-cli/
 /output/playwright/
 
 # Supabase local state
