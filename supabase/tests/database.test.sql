@@ -69,6 +69,10 @@ begin
     'execute'
   ) or has_function_privilege(
     'anon',
+    'public.pause_study_session_for_navigation(uuid)',
+    'execute'
+  ) or has_function_privilege(
+    'anon',
     'public.resume_study_session(uuid,bigint)',
     'execute'
   ) or has_function_privilege(
@@ -106,6 +110,10 @@ begin
   ) or not has_function_privilege(
     'authenticated',
     'public.pause_study_session(uuid,bigint,integer)',
+    'execute'
+  ) or not has_function_privilege(
+    'authenticated',
+    'public.pause_study_session_for_navigation(uuid)',
     'execute'
   ) or not has_function_privilege(
     'authenticated',
@@ -457,8 +465,10 @@ declare
   stale_checkpoint public.study_sessions;
   paused_checkpoint public.study_sessions;
   paused_session public.study_sessions;
+  navigation_pause public.study_sessions;
   repeated_pause public.study_sessions;
   resumed_session public.study_sessions;
+  stale_resume public.study_sessions;
   camera_session public.study_sessions;
   resumed_anchor timestamptz;
 begin
@@ -521,6 +531,29 @@ begin
     raise exception 'repeating pause changed an already paused session';
   end if;
 
+  select * into navigation_pause
+  from public.pause_study_session_for_navigation(
+    '20000000-0000-4000-8000-000000000001'
+  );
+
+  if navigation_pause.status <> 'paused'
+    or navigation_pause.state_version <> paused_session.state_version + 1
+  then
+    raise exception 'navigation pause did not create a lifecycle barrier';
+  end if;
+
+  select * into stale_resume
+  from public.resume_study_session(
+    '20000000-0000-4000-8000-000000000001',
+    paused_session.state_version
+  );
+
+  if stale_resume.status <> 'paused'
+    or stale_resume.state_version <> navigation_pause.state_version
+  then
+    raise exception 'navigation pause did not invalidate a pending resume';
+  end if;
+
   select * into paused_checkpoint
   from public.checkpoint_running_session(
     '20000000-0000-4000-8000-000000000001',
@@ -539,12 +572,12 @@ begin
   select * into resumed_session
   from public.resume_study_session(
     '20000000-0000-4000-8000-000000000001',
-    paused_session.state_version
+    navigation_pause.state_version
   );
   resumed_anchor := resumed_session.resumed_at;
 
   if resumed_session.status <> 'running'
-    or resumed_session.state_version <> paused_session.state_version + 1
+    or resumed_session.state_version <> navigation_pause.state_version + 1
   then
     raise exception 'resume did not advance the lifecycle generation';
   end if;

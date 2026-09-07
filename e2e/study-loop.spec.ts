@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test"
 
 import { installMockSupabase } from "./mock-supabase"
 
-test.beforeEach(async ({ page }) => {
-  await installMockSupabase(page)
+test.beforeEach(async ({ page }, testInfo) => {
+  await installMockSupabase(page, {
+    resumeDelayMs: testInfo.title.includes("待决恢复") ? 1_000 : undefined,
+  })
 })
 
 test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环", async ({ page }) => {
@@ -219,6 +221,51 @@ test("从全局导航离开会自动暂停，并锁定当前会话的观察方�
 
   await page.getByRole("button", { name: "继续学习" }).first().click()
   expect(page.url()).toBe(sessionUrl)
+})
+
+test("显式导航会作废尚未提交的待决恢复", async ({ page }) => {
+  await page.goto("/app")
+  await page.getByRole("button", { name: "新建任务" }).first().click()
+  await page.getByLabel("任务标题").fill("验证导航状态屏障")
+  await page
+    .getByRole("textbox", { name: "步骤 1", exact: true })
+    .fill("发出恢复后立即离开")
+  await page.getByRole("button", { name: "创建任务" }).click()
+  await page.getByRole("button", { name: "开始学习" }).click()
+  await page.getByRole("button", { name: "暂停", exact: true }).click()
+  await expect(page.getByRole("button", { name: "继续" })).toBeVisible()
+
+  const pendingResume = page.waitForResponse((response) =>
+    response.url().endsWith("/rest/v1/rpc/resume_study_session"),
+  )
+  await page.getByRole("button", { name: "继续" }).click()
+  await page.getByRole("link", { name: "学迹任务首页" }).click()
+  await pendingResume
+
+  await expect(page).toHaveURL(/\/app$/)
+  await expect(page.getByText("状态：已暂停")).toBeVisible()
+})
+
+test("浏览器后退会在待决恢复提交后再次暂停", async ({ page }) => {
+  await page.goto("/app")
+  await page.getByRole("button", { name: "新建任务" }).first().click()
+  await page.getByLabel("任务标题").fill("验证后退暂停兜底")
+  await page
+    .getByRole("textbox", { name: "步骤 1", exact: true })
+    .fill("恢复尚未提交时返回任务台")
+  await page.getByRole("button", { name: "创建任务" }).click()
+  await page.getByRole("button", { name: "开始学习" }).click()
+  await page.getByRole("button", { name: "暂停", exact: true }).click()
+
+  const pendingResume = page.waitForResponse((response) =>
+    response.url().endsWith("/rest/v1/rpc/resume_study_session"),
+  )
+  await page.getByRole("button", { name: "继续" }).click()
+  await page.goBack()
+  await pendingResume
+
+  await expect(page).toHaveURL(/\/app$/)
+  await expect(page.getByText("状态：已暂停")).toBeVisible()
 })
 
 test("AI 生成可编辑的三步初稿并为离开设备运动关闭摄像头", async ({ page }) => {

@@ -329,6 +329,15 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         sessionId,
         expectedStateVersion: stateVersionRef.current,
       })
+      if (!screenMountedRef.current) {
+        if (saved.status === "running")
+          await pauseSessionRef.current({
+            sessionId,
+            expectedStateVersion: saved.state_version,
+            accumulatedSeconds: saved.accumulated_seconds,
+          })
+        return
+      }
       stateVersionRef.current = Math.max(
         stateVersionRef.current,
         saved.state_version,
@@ -340,6 +349,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       }
       toast.success("继续这一段学习")
     } catch (error) {
+      if (!screenMountedRef.current) return
       dispatch({ type: "pause", nowMs: Date.now() })
       toast.error(error instanceof Error ? error.message : "恢复失败")
     }

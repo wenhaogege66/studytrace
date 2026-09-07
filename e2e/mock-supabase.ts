@@ -119,7 +119,11 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
 
 export async function installMockSupabase(
   page: Page,
-  options: { seedSession?: boolean; seedSettings?: boolean } = {},
+  options: {
+    seedSession?: boolean
+    seedSettings?: boolean
+    resumeDelayMs?: number
+  } = {},
 ) {
   const settings: Row[] = options.seedSettings === false ? [] : [settingRow()]
   const tasks: Row[] = []
@@ -264,7 +268,7 @@ export async function installMockSupabase(
         return
       }
       if (
-        ["running", "paused"].includes(String(session.status)) &&
+        session.status === "running" &&
         Number(session.state_version) === Number(body.p_expected_state_version)
       ) {
         Object.assign(session, {
@@ -283,7 +287,40 @@ export async function installMockSupabase(
       return
     }
 
+    if (url.pathname === "/rest/v1/rpc/pause_study_session_for_navigation") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const session = sessions.find((row) => row.id === body.p_session_id)
+      if (!session) {
+        await fulfillJson(route, { message: "Study session not found" }, 404)
+        return
+      }
+      if (["running", "paused"].includes(String(session.status))) {
+        const resumedAt = session.resumed_at
+          ? new Date(String(session.resumed_at)).getTime()
+          : null
+        const runningSeconds =
+          session.status === "running" && resumedAt !== null
+            ? Math.max(0, Math.floor((Date.now() - resumedAt) / 1_000))
+            : 0
+        Object.assign(session, {
+          status: "paused",
+          accumulated_seconds:
+            Number(session.accumulated_seconds) + runningSeconds,
+          resumed_at: null,
+          camera_enabled: false,
+          state_version: Number(session.state_version) + 1,
+          updated_at: now(),
+        })
+      }
+      await fulfillJson(route, session)
+      return
+    }
+
     if (url.pathname === "/rest/v1/rpc/resume_study_session") {
+      if (options.resumeDelayMs)
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.resumeDelayMs),
+        )
       const body = (request.postDataJSON() ?? {}) as Row
       const session = sessions.find((row) => row.id === body.p_session_id)
       if (!session) {

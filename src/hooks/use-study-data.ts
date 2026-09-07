@@ -399,7 +399,7 @@ export function usePauseSessionForNavigation() {
     onMutate: (sessionId: string) =>
       cancelSessionQueries(queryClient, userId, sessionId),
     mutationFn: (sessionId: string) =>
-      pauseRunningSessionForNavigation(sessionId),
+      pauseRunningSessionForNavigation(userId, sessionId),
     onSuccess: (session) => cacheSession(queryClient, userId, session),
   })
 }

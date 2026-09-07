@@ -470,6 +470,34 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      pause_study_session_for_navigation: {
+        Args: { p_session_id: string }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       resume_study_session: {
         Args: { p_expected_state_version: number; p_session_id: string }
         Returns: {

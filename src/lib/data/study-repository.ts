@@ -334,41 +334,17 @@ export async function checkpointRunningSession(
 }
 
 export async function pauseRunningSessionForNavigation(
+  userId: string,
   sessionId: string,
 ): Promise<StudySession> {
-  const supabase = getSupabase()
-  const current = await supabase
-    .from("study_sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .maybeSingle()
-  if (current.error) fail("读取学习状态失败", current.error)
-  if (!current.data) throw new Error("学习会话不存在或已被清除")
-
-  let session = mapSession(current.data)
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (session.status !== "running") return session
-
-    const resumedAt = session.resumed_at
-      ? new Date(session.resumed_at).getTime()
-      : null
-    const accumulatedSeconds =
-      session.accumulated_seconds +
-      (session.status === "running" && resumedAt !== null
-        ? Math.max(0, Math.floor((Date.now() - resumedAt) / 1_000))
-        : 0)
-
-    session = await pauseSession(
-      session.user_id,
-      session.id,
-      session.state_version,
-      accumulatedSeconds,
-    )
-    if (session.status === "paused") return session
-  }
-
-  throw new Error("学习状态正在另一个页面变化，请再试一次")
+  const { data, error } = await getSupabase().rpc(
+    "pause_study_session_for_navigation",
+    { p_session_id: sessionId },
+  )
+  if (error) fail("离开前暂停学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("离开前暂停学习失败：返回数据异常")
+  return mapSession(data)
 }
 
 export async function listBehaviorEvents(
