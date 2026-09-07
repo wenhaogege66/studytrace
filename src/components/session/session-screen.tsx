@@ -43,7 +43,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   useBehaviorEvents,
   useEventMutations,
-  usePauseSessionForNavigation,
   useSession,
   useSessionMutations,
   useSettings,
@@ -107,7 +106,6 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const eventsQuery = useBehaviorEvents(sessionId)
   const settingsQuery = useSettings()
   const sessionMutations = useSessionMutations()
-  const pauseForNavigation = usePauseSessionForNavigation()
   const eventMutations = useEventMutations(sessionId)
   const taskMutations = useTaskMutations()
   const [timer, dispatch] = useReducer(timerReducer, {
@@ -121,7 +119,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const stateVersionRef = useRef(0)
   const cameraVersionRef = useRef(0)
   const screenMountedRef = useRef(false)
-  const pauseForNavigationRef = useRef(pauseForNavigation.mutateAsync)
+  const pauseSessionRef = useRef(sessionMutations.pause.mutateAsync)
   const terminalNavigationRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
   const [finishDialogOpen, setFinishDialogOpen] = useState(false)
@@ -133,8 +131,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   }, [timer])
 
   useEffect(() => {
-    pauseForNavigationRef.current = pauseForNavigation.mutateAsync
-  }, [pauseForNavigation.mutateAsync])
+    pauseSessionRef.current = sessionMutations.pause.mutateAsync
+  }, [sessionMutations.pause.mutateAsync])
 
   useEffect(() => {
     if (!sessionQuery.data) return
@@ -204,7 +202,14 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         if (screenMountedRef.current) return
         const current = timerRef.current
         if (!current || current.mode !== "running") return
-        void pauseForNavigationRef.current(sessionId).catch(() => undefined)
+        const now = Date.now()
+        void pauseSessionRef
+          .current({
+            sessionId,
+            expectedStateVersion: stateVersionRef.current,
+            accumulatedSeconds: elapsedSeconds(current, now),
+          })
+          .catch(() => undefined)
       })
     }
   }, [sessionId, sessionQuery.data?.user_id])

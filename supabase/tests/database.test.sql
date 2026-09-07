@@ -457,6 +457,7 @@ declare
   stale_checkpoint public.study_sessions;
   paused_checkpoint public.study_sessions;
   paused_session public.study_sessions;
+  repeated_pause public.study_sessions;
   resumed_session public.study_sessions;
   camera_session public.study_sessions;
   resumed_anchor timestamptz;
@@ -504,6 +505,20 @@ begin
     or paused_session.state_version <> first_checkpoint.state_version + 1
   then
     raise exception 'pause did not advance the lifecycle generation';
+  end if;
+
+  select * into repeated_pause
+  from public.pause_study_session(
+    '20000000-0000-4000-8000-000000000001',
+    paused_session.state_version,
+    55
+  );
+
+  if repeated_pause.status <> 'paused'
+    or repeated_pause.state_version <> paused_session.state_version
+    or repeated_pause.accumulated_seconds <> paused_session.accumulated_seconds
+  then
+    raise exception 'repeating pause changed an already paused session';
   end if;
 
   select * into paused_checkpoint

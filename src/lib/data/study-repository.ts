@@ -348,8 +348,7 @@ export async function pauseRunningSessionForNavigation(
   let session = mapSession(current.data)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (session.status === "completed" || session.status === "cancelled")
-      return session
+    if (session.status !== "running") return session
 
     const resumedAt = session.resumed_at
       ? new Date(session.resumed_at).getTime()
