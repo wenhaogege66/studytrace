@@ -12,6 +12,7 @@ import {
   Trash2,
   Volume2,
 } from "lucide-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -27,6 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useExperience } from "@/components/experience/experience-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -76,6 +78,7 @@ function SettingRow({
 
 export function SettingsScreen() {
   const router = useRouter()
+  const { user } = useExperience()
   const settings = useSettings()
   const mutations = useSettingsMutations()
   const [cameraPermission, setCameraPermission] = useState<
@@ -158,7 +161,11 @@ export function SettingsScreen() {
           你应该清楚每一项数据为何存在。
         </h1>
         <p className="mt-3 max-w-3xl leading-7 text-slate-600">
-          这里没有账号设置。只有数据用途、可选能力、阈值与清除权。
+          这里管理数据用途、可选能力、阈值与清除权。
+          <Button variant="link" className="h-auto px-1" asChild>
+            <Link href="/auth">账号与同步设置</Link>
+          </Button>
+          单独管理。
         </p>
       </section>
 
@@ -229,8 +236,8 @@ export function SettingsScreen() {
             <CardContent className="flex items-start gap-3 p-5 text-sm leading-6 text-emerald-950">
               <ShieldCheck className="mt-0.5 size-5 shrink-0" />
               <p>
-                匿名身份清除浏览器数据或换设备后无法恢复。匿名身份与其级联业务记录默认在创建
-                30 天后由数据库定时清理。
+                匿名身份清除浏览器数据或换设备后无法恢复。只有连续 30
+                天没有打开产品或写入新记录的匿名身份，才会被数据库定时清理。
               </p>
             </CardContent>
           </Card>
@@ -419,8 +426,10 @@ export function SettingsScreen() {
                 永久清除全部业务数据
               </CardTitle>
               <CardDescription>
-                删除任务、会话、事件、提醒、复盘、设置与临时 AI
-                限流计数。匿名会话本身仍留在当前浏览器，以便继续创建新数据。
+                删除任务、会话、事件、提醒、复盘、设置与临时 AI 限流计数。
+                {user?.is_anonymous
+                  ? "临时身份仍留在当前浏览器，以便继续创建新数据。"
+                  : "邮箱账号仍保留；如需删除账号本身，请前往账号与同步设置完成邮箱复验。"}
               </CardDescription>
             </CardHeader>
             <CardContent>

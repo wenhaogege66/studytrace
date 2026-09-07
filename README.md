@@ -4,7 +4,7 @@
 
 [在线体验](https://studytrace.vercel.app) · [产品首页](https://studytrace.vercel.app) · [公开仓库](https://github.com/wenhaogege66/studytrace)
 
-> 当前 v0.1 不提供账号、登录或登出界面。首次进入时由 Supabase 创建匿名身份；清除浏览器数据或更换设备后，历史无法恢复。
+> 默认仍可直接使用完整的临时体验；需要跨设备恢复时，可用六位邮箱验证码原地升级身份。不设密码，摄像头画面仍不上传。
 
 ## 为什么做学迹
 
@@ -20,6 +20,7 @@
 - 事件：滚动窗口去抖、低打扰提醒、来源标记、确认、修正与硬删除。
 - 复盘：预计/实际时长、事件时间线、完成情况、自我感受和下次调整。
 - 隐私：匿名会话、逐行权限隔离、全部数据清除、30 天匿名数据清理。
+- 同步：临时记录可绑定新邮箱，或在明确确认后与已有邮箱账号原子合并；退出前自动暂停运行会话。
 - 展示：技术实验模式可缩短阈值和注入明确标记的模拟事件。
 
 桌面 Chrome / Edge 是完整体验目标。手机端支持首页、任务管理和手动复盘；摄像头视觉能力按浏览器兼容性尽力支持。
@@ -49,6 +50,7 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 - `/app/session/[id]`：学习计时与可选视觉观察。
 - `/app/review/[id]`：单次复盘与事件修正。
 - `/app/settings`：数据用途、视觉/提醒阈值和数据清除。
+- `/auth`：临时身份升级、邮箱验证码恢复、安全合并、退出与账号删除。
 
 ## 本地视觉边界
 
@@ -129,7 +131,8 @@ Supabase 端需要：
 2. 在 Auth 设置中开启匿名身份。
 3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
 4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
-5. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
+5. 关闭公开邮箱注册、开启邮箱确认与 Manual Identity Linking；用 Resend SMTP 发送六位验证码（有效 10 分钟，60 秒后可重发）。
+6. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
 
 ## 测试
 
@@ -154,18 +157,18 @@ Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起�
 - 原始媒体始终留在浏览器内存，关闭摄像头后立即停止抽帧与 Worker。
 - 服务器只接收任务、会话、结构化事件、提醒响应、复盘和设置。
 - 用户可修正或硬删除单条事件，也可一键清除全部业务记录。
-- 匿名身份与级联数据默认在创建 30 天后由数据库定时任务清理。
-- Turnstile 只用于降低匿名入口滥用，不建立产品账号概念。
+- 临时身份与级联数据只在连续 30 天无活动后由数据库定时任务清理。
+- Turnstile 用于降低匿名入口和登录 / 合并邮件的滥用；新邮箱绑定由 Supabase 邮件限流保护。
 
 ## 路线图
 
 - v0.1：完整学习闭环、本地视觉事件、匿名安全数据层与可审计交付链。
-- v0.2：增加任务的会话历史入口；为用户明确选择的“镜头内运动”按需加载 MediaPipe Pose Landmarker，先做身体入镜与运动位移等低层线索，再以实验模式探索动作计次。
-- v0.3：在明确同意前提下探索数据导出与跨设备恢复，不改变本地视觉原则。
+- v0.1.1：任务确认完成、横向工作台、多 Session 与邮箱验证码跨设备恢复。
+- v0.2：基于本人结构化记录生成事实型长期洞察；全身运动识别保留为后续独立实验。
 
 ## English summary
 
-StudyTrace is a privacy-first learning companion that connects task planning, a resumable study timer, optional on-device face-landmark observations, and a single-session review. Camera frames and landmarks never leave the browser. The server stores only user-correctable structured events, and the product deliberately avoids attention scores, diagnostic claims, and account-facing UI.
+StudyTrace is a privacy-first execution companion that connects task planning, resumable sessions, optional on-device face-landmark observations, and review. It works anonymously by default and offers passwordless email continuity when requested. Camera frames and landmarks never leave the browser; the product avoids attention scores and diagnostic claims.
 
 ## License
 

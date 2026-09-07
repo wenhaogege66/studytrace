@@ -258,7 +258,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <CardHeader>
           <CardTitle>这段学习不存在或已经被删除</CardTitle>
           <CardDescription>
-            匿名数据只在当前浏览器会话中可恢复。
+            记录可能已删除，或不属于当前临时身份 / 邮箱账号。
           </CardDescription>
         </CardHeader>
         <CardContent>

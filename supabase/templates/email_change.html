@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <body
+    style="
+      margin: 0;
+      background: #f8f7f2;
+      color: #172033;
+      font-family: Arial, sans-serif;
+    "
+  >
+    <div style="max-width: 520px; margin: 0 auto; padding: 40px 24px">
+      <p style="margin: 0 0 24px; font-size: 14px; color: #4f46e5">
+        StudyTrace · 学迹
+      </p>
+      <h1 style="margin: 0 0 12px; font-size: 24px; line-height: 1.35">
+        保存并同步当前记录
+      </h1>
+      <p style="margin: 0 0 24px; line-height: 1.7; color: #526078">
+        请在 10 分钟内返回学迹，输入下方验证码，将当前匿名记录与 {{ .NewEmail }}
+        绑定。
+      </p>
+      <p
+        style="
+          margin: 0;
+          padding: 18px 20px;
+          border-radius: 14px;
+          background: #ecfdf5;
+          color: #047857;
+          font-size: 30px;
+          font-weight: 700;
+          letter-spacing: 8px;
+          text-align: center;
+        "
+      >
+        {{ .Token }}
+      </p>
+      <p
+        style="
+          margin: 24px 0 0;
+          font-size: 13px;
+          line-height: 1.65;
+          color: #6b7280;
+        "
+      >
+        如果你没有发起这次操作，可以忽略这封邮件；当前匿名记录不会因此邮件而改变。
+      </p>
+    </div>
+  </body>
+</html>

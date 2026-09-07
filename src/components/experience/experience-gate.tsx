@@ -9,6 +9,7 @@ import {
   RotateCcw,
   ShieldCheck,
 } from "lucide-react"
+import Link from "next/link"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 
@@ -121,7 +122,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
           <CardHeader>
             <CardTitle className="text-2xl">开始体验</CardTitle>
             <CardDescription>
-              无需注册，也不会出现登录或登出流程。
+              无需先注册；可以直接匿名体验，已有邮箱记录也可恢复。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -129,8 +130,8 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
               <Database />
               <AlertTitle>匿名数据提示</AlertTitle>
               <AlertDescription>
-                换设备、清除本站浏览器数据或主动清除全部记录后，历史无法恢复；匿名记录默认最长保留
-                30 天。
+                换设备、清除本站浏览器数据或主动清除全部记录后，历史无法恢复；匿名身份连续
+                30 天无活动后才会被定时清理。
               </AlertDescription>
             </Alert>
 
@@ -180,6 +181,11 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
                   ? "等待安全校验"
                   : "开始体验"}
             </Button>
+            <div className="border-t border-slate-200 pt-4 text-center">
+              <Button variant="ghost" className="min-h-11" asChild>
+                <Link href="/auth">已有邮箱记录？验证并恢复</Link>
+              </Button>
+            </div>
             {error ? <p className="text-destructive text-sm">{error}</p> : null}
           </CardContent>
         </Card>
