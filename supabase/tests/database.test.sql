@@ -87,6 +87,14 @@ begin
     'anon',
     'public.set_task_step_completed(uuid,text,boolean)',
     'execute'
+  ) or has_function_privilege(
+    'anon',
+    'public.confirm_task_completion(uuid,integer)',
+    'execute'
+  ) or has_function_privilege(
+    'anon',
+    'public.reopen_completed_task(uuid)',
+    'execute'
   ) then
     raise exception 'anon must not execute protected application functions';
   end if;
@@ -130,6 +138,14 @@ begin
   ) or not has_function_privilege(
     'authenticated',
     'public.set_task_step_completed(uuid,text,boolean)',
+    'execute'
+  ) or not has_function_privilege(
+    'authenticated',
+    'public.confirm_task_completion(uuid,integer)',
+    'execute'
+  ) or not has_function_privilege(
+    'authenticated',
+    'public.reopen_completed_task(uuid)',
     'execute'
   ) then
     raise exception 'authenticated must execute protected application functions';
@@ -361,6 +377,44 @@ values (
   'medium',
   25
 );
+
+do $$
+declare
+  direct_ready_completion_was_blocked boolean := false;
+  ready_task_id uuid := '10000000-0000-4000-8000-000000000006';
+begin
+  insert into public.tasks (
+    id,
+    user_id,
+    title,
+    steps,
+    priority,
+    estimated_minutes
+  )
+  values (
+    ready_task_id,
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '已勾选但待确认的任务',
+    '[{"id":"ready-step","title":"已完成步骤","completed":true}]',
+    'medium',
+    10
+  );
+
+  begin
+    update public.tasks
+    set status = 'completed', completed_at = now()
+    where id = ready_task_id;
+  exception
+    when check_violation then direct_ready_completion_was_blocked := true;
+  end;
+
+  if not direct_ready_completion_was_blocked then
+    raise exception 'an all-steps-complete task bypassed explicit confirmation';
+  end if;
+
+  delete from public.tasks where id = ready_task_id;
+end;
+$$;
 
 do $$
 declare
@@ -653,6 +707,7 @@ values (
 do $$
 declare
   updated_task public.tasks;
+  ready_start_was_blocked boolean := false;
 begin
   perform public.set_task_step_completed(
     '10000000-0000-4000-8000-000000000001',
@@ -675,6 +730,20 @@ begin
     raise exception 'atomic step updates overwrote a prior checkbox change';
   end if;
 
+  begin
+    perform public.start_study_session(
+      '10000000-0000-4000-8000-000000000001',
+      true,
+      false
+    );
+  exception
+    when sqlstate 'P0001' then ready_start_was_blocked := true;
+  end;
+
+  if not ready_start_was_blocked then
+    raise exception 'an all-steps-complete task returned its active session instead of requiring confirmation';
+  end if;
+
   perform public.set_task_step_completed(
     '10000000-0000-4000-8000-000000000001',
     'step-a',
@@ -692,6 +761,9 @@ do $$
 declare
   resumed_session public.study_sessions;
   finished_session public.study_sessions;
+  confirmed_task public.tasks;
+  repeated_confirmation public.tasks;
+  reopened_task public.tasks;
   completed_task_status text;
   completed_task_at timestamptz;
   incomplete_finish_was_blocked boolean := false;
@@ -787,11 +859,24 @@ begin
     resumed_session.state_version
   );
 
-  select * into finished_session
-  from public.finish_study_session(resumed_session.id, 20, 'completed');
+  select * into confirmed_task
+  from public.confirm_task_completion(
+    '10000000-0000-4000-8000-000000000001',
+    20
+  );
 
-  if finished_session.accumulated_seconds < 300 then
-    raise exception 'a stale terminal client value reduced accepted elapsed time';
+  select * into finished_session
+  from public.study_sessions
+  where id = resumed_session.id;
+
+  if finished_session.status <> 'completed'
+    or finished_session.task_outcome <> 'completed'
+    or finished_session.accumulated_seconds < 300
+    or finished_session.ended_at is null
+    or finished_session.resumed_at is not null
+    or finished_session.camera_enabled
+  then
+    raise exception 'confirmation did not atomically close the active session';
   end if;
 
   select status, completed_at
@@ -799,8 +884,21 @@ begin
   from public.tasks
   where id = '10000000-0000-4000-8000-000000000001';
 
-  if completed_task_status <> 'completed' or completed_task_at is null then
-    raise exception 'all-complete session did not complete its task';
+  if confirmed_task.status <> 'completed'
+    or completed_task_status <> 'completed'
+    or completed_task_at is null
+  then
+    raise exception 'confirmation did not complete its all-steps-complete task';
+  end if;
+
+  select * into repeated_confirmation
+  from public.confirm_task_completion(
+    '10000000-0000-4000-8000-000000000001',
+    null
+  );
+
+  if repeated_confirmation.completed_at is distinct from completed_task_at then
+    raise exception 'repeated confirmation changed an already completed task';
   end if;
 
   begin
@@ -816,6 +914,28 @@ begin
   if not start_was_blocked then
     raise exception 'completed task unexpectedly started another session';
   end if;
+
+  select * into reopened_task
+  from public.reopen_completed_task(
+    '10000000-0000-4000-8000-000000000001'
+  );
+
+  if reopened_task.status <> 'in_progress'
+    or reopened_task.completed_at is not null
+    or reopened_task.steps->0->'completed' is distinct from 'false'::jsonb
+  then
+    raise exception 'reopening did not reopen the last step and clear terminal state';
+  end if;
+
+  perform public.set_task_step_completed(
+    '10000000-0000-4000-8000-000000000001',
+    'step-a',
+    true
+  );
+  perform public.confirm_task_completion(
+    '10000000-0000-4000-8000-000000000001',
+    null
+  );
 end;
 $$;
 
@@ -905,8 +1025,10 @@ declare
   active_profile_change_was_blocked boolean := false;
   immutable_snapshot_was_enforced boolean := false;
   terminal_mutation_was_blocked boolean := false;
+  ready_start_was_blocked boolean := false;
   late_event_end timestamptz;
   stored_review_status text;
+  confirmed_ready_task public.tasks;
 begin
   begin
     update public.tasks
@@ -1091,6 +1213,40 @@ begin
       and status in ('running', 'paused')
   ) then
     raise exception 'cancelled sessions still occupied the active-session slot';
+  end if;
+
+  select status into stored_task_status
+  from public.tasks
+  where id = '10000000-0000-4000-8000-000000000004';
+
+  if stored_task_status <> 'in_progress' then
+    raise exception 'cancelling a ready task regressed or completed its parent task';
+  end if;
+
+  begin
+    perform public.start_study_session(
+      '10000000-0000-4000-8000-000000000004',
+      true,
+      false
+    );
+  exception
+    when sqlstate 'P0001' then ready_start_was_blocked := true;
+  end;
+
+  if not ready_start_was_blocked then
+    raise exception 'a ready task started a new session after cancellation';
+  end if;
+
+  select * into confirmed_ready_task
+  from public.confirm_task_completion(
+    '10000000-0000-4000-8000-000000000004',
+    null
+  );
+
+  if confirmed_ready_task.status <> 'completed'
+    or confirmed_ready_task.completed_at is null
+  then
+    raise exception 'a ready task without an active session could not be confirmed';
   end if;
 end;
 $$;

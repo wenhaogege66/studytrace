@@ -57,15 +57,15 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
   await expect(page.getByRole("button", { name: "继续" })).toBeVisible()
   await page.getByRole("button", { name: "继续" }).click()
 
-  await expect(page.getByRole("button", { name: "结束并复盘" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "确认完成" })).toHaveCount(0)
   await page.getByRole("checkbox").click()
-  await page.getByRole("button", { name: "结束并复盘" }).click()
+  await page.getByRole("button", { name: "确认完成" }).click()
   await expect(
     page.getByRole("heading", {
       name: "确认完成这个任务？",
     }),
   ).toBeVisible()
-  await page.getByRole("button", { name: "确认结束并复盘" }).click()
+  await page.getByRole("button", { name: "完成并立即复盘" }).click()
   await expect(page).toHaveURL(/\/app\/review\//)
   await expect(
     page.getByRole("heading", { name: "完成一次科创问题定义" }),
@@ -109,13 +109,18 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
   const firstSessionUrl = page.url()
   await page.getByRole("checkbox").first().click()
   await expect(page.getByText("1/2")).toBeVisible()
-  await expect(page.getByRole("button", { name: "结束并复盘" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "确认完成" })).toHaveCount(0)
 
   await page.getByRole("button", { name: "暂停并返回" }).click()
   await expect(page).toHaveURL(/\/app$/)
 
   await expect(page.getByText("完成一轮物理总复习")).toBeVisible()
-  await expect(page.getByText("1/2 步")).toBeVisible()
+  const resumedTaskRow = page
+    .getByRole("heading", { name: "完成一轮物理总复习" })
+    .locator("xpath=ancestor::*[@data-slot='card'][1]")
+  await expect(
+    resumedTaskRow.getByText("1/2 步", { exact: true }).last(),
+  ).toBeVisible()
   await page.getByRole("button", { name: "任务操作" }).click()
   await expect(
     page.getByRole("menuitem", { name: "学习会话进行中，无法归档" }),
@@ -144,13 +149,70 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
   await expect(page).toHaveURL(/\/app\/session\//)
   expect(page.url()).not.toBe(firstSessionUrl)
   await page.getByRole("checkbox").nth(1).click()
-  await page.getByRole("button", { name: "结束并复盘" }).click()
-  await page.getByRole("button", { name: "确认结束并复盘" }).click()
+  await page.getByRole("button", { name: "确认完成" }).click()
+  await page.getByRole("button", { name: "完成并立即复盘" }).click()
   await page.getByRole("link", { name: "跳过复盘并返回" }).click()
   await expect(page).toHaveURL(/\/app$/)
   await page.getByRole("button", { name: "已完成 1" }).click()
   await expect(page.getByText("完成一轮物理总复习")).toBeVisible()
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
+})
+
+test("全步骤完成后等待确认，且支持复制或重新打开", async ({ page }) => {
+  await page.goto("/app")
+  await page.getByRole("button", { name: "新建任务" }).first().click()
+  await page.getByLabel("任务标题").fill("完成一次待确认任务")
+  await page
+    .getByRole("textbox", { name: "步骤 1", exact: true })
+    .fill("完成唯一步骤")
+  await page.getByRole("button", { name: "创建任务" }).click()
+
+  const taskHeading = page.getByRole("heading", {
+    name: "完成一次待确认任务",
+  })
+  const compactRow = taskHeading.locator(
+    "xpath=ancestor::*[@data-slot='card'][1]",
+  )
+  const box = await compactRow.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.width).toBeGreaterThan(box!.height * 3)
+
+  await page.getByRole("button", { name: "开始学习" }).click()
+  await page.getByRole("checkbox").click()
+  await page.getByRole("button", { name: "返回任务台" }).click()
+  await expect(page).toHaveURL(/\/app$/)
+
+  await expect(page.getByText("待确认完成", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
+  await page.getByRole("button", { name: "确认完成" }).click()
+  const completionDialog = page.getByRole("alertdialog", {
+    name: "确认完成“完成一次待确认任务”？",
+  })
+  await completionDialog.getByRole("button", { name: "确认完成" }).click()
+  await expect(page.getByRole("button", { name: "已完成 1" })).toBeVisible()
+
+  await page.getByRole("button", { name: "已完成 1" }).click()
+  await page.getByRole("button", { name: "任务操作" }).click()
+  await page.getByRole("menuitem", { name: "复制为新任务" }).click()
+  await expect(
+    page.getByRole("heading", { name: "完成一次待确认任务（副本）" }),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: "已完成 1" }).click()
+  await page.getByRole("button", { name: "任务操作" }).click()
+  await page.getByRole("menuitem", { name: "重新打开任务" }).click()
+  const reopenDialog = page.getByRole("alertdialog", {
+    name: "重新打开“完成一次待确认任务”？",
+  })
+  await reopenDialog.getByRole("button", { name: "重新打开" }).click()
+  await page.getByRole("button", { name: "待完成 2" }).click()
+  const reopenedRow = page
+    .getByRole("heading", { name: "完成一次待确认任务", exact: true })
+    .locator("xpath=ancestor::*[@data-slot='card'][1]")
+  await expect(reopenedRow.getByText("待继续", { exact: true })).toBeVisible()
+  await expect(
+    reopenedRow.getByText("0/1 步", { exact: true }).last(),
+  ).toBeVisible()
 })
 
 test("任务可归档、在已归档列表恢复并重新开始", async ({ page }) => {
@@ -301,7 +363,7 @@ test("AI 生成可编辑的三步初稿并为离开设备运动关闭摄像头",
 
   await page.getByRole("textbox", { name: "步骤 2" }).fill("完成 25 分钟慢跑")
   await page.getByRole("button", { name: "创建任务" }).click()
-  await expect(page.getByText("离设备任务")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "去操场慢跑" })).toBeVisible()
 
   await page.getByRole("button", { name: "开始学习" }).click()
   await expect(page.getByText("此任务不使用电脑摄像头")).toBeVisible()

@@ -96,6 +96,20 @@ function filterRows(rows: Row[], url: URL) {
   return result
 }
 
+function taskStepsComplete(task: Row | undefined) {
+  const steps = Array.isArray(task?.steps) ? task.steps : []
+  return (
+    steps.length > 0 &&
+    steps.every(
+      (step) =>
+        Boolean(step) &&
+        typeof step === "object" &&
+        !Array.isArray(step) &&
+        (step as Row).completed === true,
+    )
+  )
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   const request = route.request()
   const accept = request.headers().accept ?? ""
@@ -182,14 +196,6 @@ export async function installMockSupabase(
 
     if (url.pathname === "/rest/v1/rpc/start_study_session") {
       const body = (request.postDataJSON() ?? {}) as Row
-      const existing = sessions.find((row) =>
-        ["running", "paused"].includes(String(row.status)),
-      )
-      if (existing) {
-        await fulfillJson(route, existing)
-        return
-      }
-
       const task = tasks.find((row) => row.id === body.p_task_id)
       if (!task || !["planned", "in_progress"].includes(String(task.status))) {
         await fulfillJson(
@@ -200,6 +206,25 @@ export async function installMockSupabase(
           },
           400,
         )
+        return
+      }
+      if (taskStepsComplete(task)) {
+        await fulfillJson(
+          route,
+          {
+            message:
+              "Task steps are complete; confirm the task instead of starting another study session",
+          },
+          400,
+        )
+        return
+      }
+
+      const existing = sessions.find((row) =>
+        ["running", "paused"].includes(String(row.status)),
+      )
+      if (existing) {
+        await fulfillJson(route, existing)
         return
       }
 
@@ -420,6 +445,98 @@ export async function installMockSupabase(
       return
     }
 
+    if (url.pathname === "/rest/v1/rpc/confirm_task_completion") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const task = tasks.find((row) => row.id === body.p_task_id)
+      if (!task) {
+        await fulfillJson(route, { message: "Task not found" }, 404)
+        return
+      }
+      if (task.status === "completed") {
+        await fulfillJson(route, task)
+        return
+      }
+      if (task.status === "archived" || !taskStepsComplete(task)) {
+        await fulfillJson(
+          route,
+          { message: "Complete every task step before confirming the task" },
+          400,
+        )
+        return
+      }
+
+      const timestamp = now()
+      const session = sessions.find(
+        (row) =>
+          row.task_id === task.id &&
+          ["running", "paused"].includes(String(row.status)),
+      )
+      if (session) {
+        const storedSeconds = Number(session.accumulated_seconds)
+        const resumedAt =
+          typeof session.resumed_at === "string"
+            ? Date.parse(session.resumed_at)
+            : Number.NaN
+        const serverElapsedSeconds =
+          session.status === "running" && Number.isFinite(resumedAt)
+            ? Math.max(
+                0,
+                Math.floor((Date.parse(timestamp) - resumedAt) / 1000),
+              )
+            : 0
+        Object.assign(session, {
+          status: "completed",
+          accumulated_seconds: Math.max(
+            storedSeconds,
+            storedSeconds + serverElapsedSeconds,
+            Number(body.p_accumulated_seconds ?? 0),
+          ),
+          ended_at: timestamp,
+          resumed_at: null,
+          camera_enabled: false,
+          task_outcome: "completed",
+          state_version: Number(session.state_version) + 1,
+          updated_at: timestamp,
+        })
+        behaviorEvents
+          .filter((event) => event.session_id === session.id && !event.ended_at)
+          .forEach((event) => Object.assign(event, { ended_at: timestamp }))
+      }
+      Object.assign(task, {
+        status: "completed",
+        completed_at: timestamp,
+        updated_at: timestamp,
+      })
+      await fulfillJson(route, task)
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/reopen_completed_task") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const task = tasks.find((row) => row.id === body.p_task_id)
+      if (!task || task.status !== "completed") {
+        await fulfillJson(
+          route,
+          { message: "Only completed tasks can be reopened" },
+          400,
+        )
+        return
+      }
+      const steps = Array.isArray(task.steps) ? task.steps : []
+      task.steps = steps.map((step, index) =>
+        index === steps.length - 1
+          ? { ...(step as Row), completed: false }
+          : step,
+      )
+      Object.assign(task, {
+        status: "in_progress",
+        completed_at: null,
+        updated_at: now(),
+      })
+      await fulfillJson(route, task)
+      return
+    }
+
     if (url.pathname === "/rest/v1/rpc/cancel_study_session") {
       const body = (request.postDataJSON() ?? {}) as Row
       const session = sessions.find((row) => row.id === body.p_session_id)
@@ -453,13 +570,6 @@ export async function installMockSupabase(
         state_version: Number(session.state_version) + 1,
         updated_at: timestamp,
       })
-      if (task) {
-        Object.assign(task, {
-          status: "in_progress",
-          completed_at: null,
-          updated_at: timestamp,
-        })
-      }
       await fulfillJson(route, session)
       return
     }
@@ -516,6 +626,15 @@ export async function installMockSupabase(
 
     if (method === "GET" || method === "HEAD") {
       await fulfillJson(route, filterRows(rows, url))
+      return
+    }
+
+    if (table === "study_sessions") {
+      await fulfillJson(
+        route,
+        { message: "permission denied for table study_sessions" },
+        403,
+      )
       return
     }
 

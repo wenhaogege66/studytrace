@@ -1,4 +1,5 @@
 import {
+  createStep,
   mapBehaviorEvent,
   mapReview,
   mapSession,
@@ -19,8 +20,36 @@ import {
 import { getSupabase } from "@/lib/supabase/client"
 import type { TablesUpdate } from "@/types/database"
 
-function fail(message: string, error: { message: string }): never {
-  throw new Error(`${message}：${error.message}`)
+type DataError = { code?: string; message: string }
+
+function friendlyDataError(error: DataError) {
+  if (
+    error.message.includes("Task steps are complete") ||
+    error.message.includes("confirm the task instead of starting")
+  )
+    return "全部步骤已完成，请先确认完成任务"
+  if (error.message.includes("Complete every task step"))
+    return "请先完成所有任务步骤"
+  if (error.message.includes("Only completed tasks can be reopened"))
+    return "只有已完成任务可以重新打开"
+  if (error.message.includes("Completed or archived tasks cannot start"))
+    return "已完成或已归档任务不能直接开始"
+  if (
+    error.code === "42501" ||
+    error.message.toLocaleLowerCase().includes("row-level security") ||
+    error.message.toLocaleLowerCase().includes("permission denied")
+  )
+    return "当前体验会话已失效或没有权限，请刷新页面后重试"
+  if (
+    error.message.toLocaleLowerCase().includes("fetch failed") ||
+    error.message.toLocaleLowerCase().includes("failed to fetch")
+  )
+    return "网络连接失败，请检查网络后重试"
+  return error.message
+}
+
+function fail(message: string, error: DataError): never {
+  throw new Error(`${message}：${friendlyDataError(error)}`)
 }
 
 export async function ensureSettings(userId: string) {
@@ -108,6 +137,16 @@ export async function updateTask(
   return mapTask(data)
 }
 
+export async function duplicateTask(userId: string, task: Task): Promise<Task> {
+  return createTask(userId, {
+    title: `${task.title}（副本）`,
+    steps: task.steps.map((step) => createStep(step.title)),
+    priority: task.priority,
+    estimatedMinutes: task.estimated_minutes,
+    observationProfile: task.observation_profile,
+  })
+}
+
 export async function setTaskStepCompleted(
   userId: string,
   taskId: string,
@@ -122,6 +161,38 @@ export async function setTaskStepCompleted(
   if (error) fail("更新任务步骤失败", error)
   if (!data || data.user_id !== userId)
     throw new Error("更新任务步骤失败：返回数据异常")
+  return mapTask(data)
+}
+
+export async function confirmTaskCompletion(
+  userId: string,
+  taskId: string,
+  accumulatedSeconds?: number,
+): Promise<Task> {
+  const { data, error } = await getSupabase().rpc("confirm_task_completion", {
+    p_task_id: taskId,
+    ...(accumulatedSeconds === undefined
+      ? {}
+      : {
+          p_accumulated_seconds: Math.max(0, Math.floor(accumulatedSeconds)),
+        }),
+  })
+  if (error) fail("确认完成失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("确认完成失败：返回数据异常")
+  return mapTask(data)
+}
+
+export async function reopenCompletedTask(
+  userId: string,
+  taskId: string,
+): Promise<Task> {
+  const { data, error } = await getSupabase().rpc("reopen_completed_task", {
+    p_task_id: taskId,
+  })
+  if (error) fail("重新打开任务失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("重新打开任务失败：返回数据异常")
   return mapTask(data)
 }
 
@@ -258,6 +329,21 @@ export async function getSession(
     .maybeSingle()
   if (error) fail("读取学习记录失败", error)
   return data ? mapSession(data) : null
+}
+
+export async function listTaskSessions(
+  userId: string,
+  taskId: string,
+): Promise<StudySession[]> {
+  const { data, error } = await getSupabase()
+    .from("study_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("task_id", taskId)
+    .order("started_at", { ascending: false })
+    .limit(5)
+  if (error) fail("读取学习记录失败", error)
+  return data.map(mapSession)
 }
 
 export async function pauseSession(

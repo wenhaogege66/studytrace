@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest"
 import {
   areTaskStepsComplete,
   canStartTask,
+  canStartTaskNow,
   formatDuration,
   mapTask,
   parseTaskSteps,
   stepsToJson,
+  taskDisplayStatus,
   taskStatusForOutcome,
 } from "@/lib/domain"
 import type { Tables } from "@/types/database"
@@ -79,5 +81,33 @@ describe("domain data conversions", () => {
         { id: "two", title: "第二步", completed: true },
       ]),
     ).toBe(true)
+  })
+
+  it("derives ready-to-complete before any resumable session state", () => {
+    const openTask = {
+      status: "in_progress" as const,
+      steps: [{ id: "one", title: "第一步", completed: false }],
+    }
+    const readyTask = {
+      ...openTask,
+      steps: [{ id: "one", title: "第一步", completed: true }],
+    }
+
+    expect(taskDisplayStatus(openTask, "running")).toBe("running")
+    expect(taskDisplayStatus(openTask, "paused")).toBe("paused")
+    expect(taskDisplayStatus(openTask)).toBe("in_progress")
+    expect(taskDisplayStatus(readyTask, "paused")).toBe("ready_to_complete")
+    expect(canStartTaskNow(openTask)).toBe(true)
+    expect(canStartTaskNow(readyTask)).toBe(false)
+  })
+
+  it("keeps terminal database states authoritative in the presentation", () => {
+    const checkedSteps = [{ id: "one", title: "第一步", completed: true }]
+    expect(
+      taskDisplayStatus({ status: "completed", steps: checkedSteps }, null),
+    ).toBe("completed")
+    expect(
+      taskDisplayStatus({ status: "archived", steps: checkedSteps }, null),
+    ).toBe("archived")
   })
 })

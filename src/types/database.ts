@@ -371,6 +371,28 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      confirm_task_completion: {
+        Args: { p_accumulated_seconds?: number; p_task_id: string }
+        Returns: {
+          completed_at: string | null
+          created_at: string
+          estimated_minutes: number
+          id: string
+          observation_profile: string
+          priority: string
+          status: string
+          steps: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       checkpoint_running_session: {
         Args: {
           p_accumulated_seconds: number
@@ -494,6 +516,28 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      reopen_completed_task: {
+        Args: { p_task_id: string }
+        Returns: {
+          completed_at: string | null
+          created_at: string
+          estimated_minutes: number
+          id: string
+          observation_profile: string
+          priority: string
+          status: string
+          steps: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tasks"
           isOneToOne: true
           isSetofReturn: false
         }

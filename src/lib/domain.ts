@@ -6,6 +6,14 @@ import {
 
 export type Priority = "low" | "medium" | "high"
 export type TaskStatus = "planned" | "in_progress" | "completed" | "archived"
+export type TaskDisplayStatus =
+  | "not_started"
+  | "in_progress"
+  | "running"
+  | "paused"
+  | "ready_to_complete"
+  | "completed"
+  | "archived"
 export type SessionStatus = "running" | "paused" | "completed" | "cancelled"
 export type BehaviorEventType =
   "face_absent" | "head_direction_change" | "manual"
@@ -111,6 +119,23 @@ export function canStartTask(status: TaskStatus) {
 
 export function areTaskStepsComplete(steps: TaskStep[]) {
   return steps.length > 0 && steps.every((step) => step.completed)
+}
+
+export function canStartTaskNow(task: Pick<Task, "status" | "steps">): boolean {
+  return canStartTask(task.status) && !areTaskStepsComplete(task.steps)
+}
+
+export function taskDisplayStatus(
+  task: Pick<Task, "status" | "steps">,
+  activeSessionStatus?: "running" | "paused" | null,
+): TaskDisplayStatus {
+  if (task.status === "completed") return "completed"
+  if (task.status === "archived") return "archived"
+  if (areTaskStepsComplete(task.steps)) return "ready_to_complete"
+  if (activeSessionStatus === "running") return "running"
+  if (activeSessionStatus === "paused") return "paused"
+  if (task.status === "in_progress") return "in_progress"
+  return "not_started"
 }
 
 export function taskStatusForOutcome(outcome: SessionOutcome): TaskStatus {

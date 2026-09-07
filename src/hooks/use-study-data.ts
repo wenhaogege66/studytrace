@@ -11,12 +11,14 @@ import { useExperience } from "@/components/experience/experience-provider"
 import {
   checkpointRunningSession,
   cancelSession,
+  confirmTaskCompletion,
   createBehaviorEvent,
   createReminderEvent,
   createTask,
   deleteAllMyData,
   deleteBehaviorEvent,
   deleteTask,
+  duplicateTask,
   finishSession,
   getActiveSession,
   getReview,
@@ -24,11 +26,13 @@ import {
   getSettings,
   getTask,
   listBehaviorEvents,
+  listTaskSessions,
   listTasks,
   loadSampleTasks,
   pauseRunningSessionForNavigation,
   pauseSession,
   resumeSession,
+  reopenCompletedTask,
   saveReview,
   setSessionCameraEnabled,
   setTaskStepCompleted,
@@ -45,6 +49,7 @@ import type {
   EventSource,
   SessionOutcome,
   StudySession,
+  Task,
   TaskDraft,
 } from "@/lib/domain"
 import {
@@ -57,6 +62,8 @@ import type { TablesUpdate } from "@/types/database"
 export const studyKeys = {
   tasks: (userId: string) => ["tasks", userId] as const,
   task: (userId: string, taskId: string) => ["task", userId, taskId] as const,
+  taskSessions: (userId: string, taskId: string) =>
+    ["task-sessions", userId, taskId] as const,
   activeSession: (userId: string) => ["active-session", userId] as const,
   session: (userId: string, sessionId: string) =>
     ["session", userId, sessionId] as const,
@@ -147,6 +154,15 @@ export function useActiveSession() {
   })
 }
 
+export function useTaskSessions(taskId: string, enabled = true) {
+  const userId = useUserId()
+  return useQuery({
+    queryKey: studyKeys.taskSessions(userId, taskId),
+    queryFn: () => listTaskSessions(userId, taskId),
+    enabled,
+  })
+}
+
 export function useSession(sessionId: string | undefined) {
   const userId = useUserId()
   return useQuery<StudySession | null>({
@@ -204,6 +220,10 @@ export function useTaskMutations() {
         await refresh()
       },
     }),
+    duplicate: useMutation({
+      mutationFn: (task: Task) => duplicateTask(userId, task),
+      onSuccess: refresh,
+    }),
     step: useMutation({
       mutationFn: ({
         taskId,
@@ -236,6 +256,36 @@ export function useTaskMutations() {
         taskId: string
         status: "planned" | "in_progress" | "completed" | "archived"
       }) => setTaskStatus(userId, taskId, status),
+      onSuccess: async (task) => {
+        queryClient.setQueryData(studyKeys.task(userId, task.id), task)
+        await refresh()
+      },
+    }),
+    complete: useMutation({
+      mutationFn: ({
+        taskId,
+        accumulatedSeconds,
+      }: {
+        taskId: string
+        accumulatedSeconds?: number
+      }) => confirmTaskCompletion(userId, taskId, accumulatedSeconds),
+      onSuccess: async (task) => {
+        queryClient.setQueryData(studyKeys.task(userId, task.id), task)
+        await Promise.all([
+          refresh(),
+          queryClient.invalidateQueries({
+            queryKey: studyKeys.activeSession(userId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: studyKeys.taskSessions(userId, task.id),
+          }),
+          queryClient.invalidateQueries({ queryKey: ["session", userId] }),
+          queryClient.invalidateQueries({ queryKey: ["events", userId] }),
+        ])
+      },
+    }),
+    reopen: useMutation({
+      mutationFn: (taskId: string) => reopenCompletedTask(userId, taskId),
       onSuccess: async (task) => {
         queryClient.setQueryData(studyKeys.task(userId, task.id), task)
         await refresh()

@@ -6,8 +6,11 @@ import {
   BookOpenCheck,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Circle,
   Clock3,
+  Copy,
   Ellipsis,
   ListPlus,
   LoaderCircle,
@@ -73,6 +76,7 @@ import {
   useActiveSession,
   useSessionMutations,
   useSettings,
+  useTaskSessions,
   useTaskMutations,
   useTasks,
 } from "@/hooks/use-study-data"
@@ -80,9 +84,13 @@ import { taskPlanSuggestionSchema } from "@/lib/ai/task-plan-contract"
 import {
   areTaskStepsComplete,
   canStartTask,
+  canStartTaskNow,
   createStep,
+  formatMinutes,
+  taskDisplayStatus,
   type Priority,
   type Task,
+  type TaskDisplayStatus,
   type TaskDraft,
   type TaskStep,
 } from "@/lib/domain"
@@ -104,6 +112,52 @@ const priorityMeta: Record<Priority, { label: string; className: string }> = {
     label: "低优先",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
   },
+}
+
+const statusMeta: Record<
+  TaskDisplayStatus,
+  { label: string; className: string }
+> = {
+  not_started: {
+    label: "未开始",
+    className: "border-slate-200 bg-slate-50 text-slate-600",
+  },
+  in_progress: {
+    label: "待继续",
+    className: "border-indigo-100 bg-indigo-50 text-indigo-700",
+  },
+  running: {
+    label: "计时中",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  paused: {
+    label: "已暂停",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  ready_to_complete: {
+    label: "待确认完成",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  completed: {
+    label: "已完成",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  archived: {
+    label: "已归档",
+    className: "border-slate-200 bg-slate-100 text-slate-600",
+  },
+}
+
+function TaskStateIcon({ status }: { status: TaskDisplayStatus }) {
+  if (status === "completed")
+    return <CheckCircle2 className="size-5 text-emerald-600" />
+  if (status === "ready_to_complete")
+    return <Check className="size-5 text-emerald-600" />
+  if (status === "running") return <Play className="size-5 text-emerald-600" />
+  if (status === "paused") return <Clock3 className="size-5 text-amber-600" />
+  if (status === "archived")
+    return <Archive className="size-5 text-slate-500" />
+  return <Circle className="size-5 text-slate-400" />
 }
 
 function emptyDraft(): TaskDraft {
@@ -481,121 +535,143 @@ function TaskRow({
   onStart,
   onComplete,
   onReopen,
+  onDuplicate,
   onRestore,
   onArchive,
   onDelete,
   starting,
   statusChanging,
   sessionState,
+  currentSessionStatus,
 }: {
   task: Task
   onEdit: () => void
   onStart: () => void
   onComplete: () => Promise<void>
   onReopen: () => Promise<void>
+  onDuplicate: () => Promise<void>
   onRestore: () => Promise<void>
   onArchive: () => Promise<void>
   onDelete: () => Promise<void>
   starting: boolean
   statusChanging: boolean
   sessionState: "current" | "blocked" | "none"
+  currentSessionStatus: "running" | "paused" | null
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const sessionHistory = useTaskSessions(task.id, expanded)
   const completedSteps = task.steps.filter((step) => step.completed).length
   const progress = task.steps.length
     ? (completedSteps / task.steps.length) * 100
     : 0
   const priority = priorityMeta[task.priority]
-  const completed = task.status === "completed"
-  const archived = task.status === "archived"
-  const stepsCompleted = areTaskStepsComplete(task.steps)
+  const displayStatus = taskDisplayStatus(task, currentSessionStatus)
+  const status = statusMeta[displayStatus]
+  const completed = displayStatus === "completed"
+  const archived = displayStatus === "archived"
+  const readyToComplete = displayStatus === "ready_to_complete"
+  const nextStep = task.steps.find((step) => !step.completed)
 
   return (
     <Card
-      className={`border-indigo-100 bg-white/90 py-0 shadow-sm transition-colors hover:border-indigo-200 ${completed ? "bg-slate-50/80" : ""}`}
+      className={`overflow-hidden border-indigo-100 bg-white/92 py-0 transition-[border-color,background-color] hover:border-indigo-200 ${completed ? "bg-slate-50/85" : ""}`}
     >
       <CardContent className="p-0">
-        <div className="flex flex-col gap-4 p-4 sm:grid sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:gap-5">
-          <button
-            type="button"
-            className="hidden size-8 shrink-0 place-items-center rounded-full text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 sm:grid"
-            aria-label={
-              completed
-                ? `“${task.title}”已完成`
-                : archived
-                  ? `“${task.title}”已归档`
-                  : `将“${task.title}”标记为已完成`
-            }
-            disabled={
-              completed ||
-              archived ||
-              !stepsCompleted ||
-              statusChanging ||
-              sessionState === "current"
-            }
-            title={
-              !completed && !stepsCompleted
-                ? "完成全部步骤后才能标记任务完成"
-                : undefined
-            }
-            onClick={() => void onComplete()}
-          >
-            {completed ? (
-              <CheckCircle2 className="size-6 text-emerald-600" />
-            ) : (
-              <Circle className="size-6" />
-            )}
-          </button>
+        <div className="grid min-h-32 gap-x-4 gap-y-3 p-3.5 sm:min-h-24 sm:grid-cols-[auto_minmax(0,1fr)_10rem_auto] sm:items-center sm:gap-x-5 sm:py-3">
+          <div className="flex items-center gap-2 sm:flex-col sm:gap-1.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-50">
+              <TaskStateIcon status={displayStatus} />
+            </span>
+            <Badge variant="outline" className={status.className}>
+              {status.label}
+            </Badge>
+          </div>
 
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="sm:hidden">
-                {completed ? (
-                  <CheckCircle2 className="size-5 text-emerald-600" />
-                ) : (
-                  <Circle className="size-5 text-slate-400" />
-                )}
-              </span>
-              <Badge variant="outline" className={priority.className}>
+          <div className="min-w-0 self-center">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                className={`truncate text-base font-semibold text-slate-950 ${completed ? "text-slate-500 line-through" : ""}`}
+              >
+                {task.title}
+              </h2>
+              <Badge
+                variant="outline"
+                className={`hidden shrink-0 md:inline-flex ${priority.className}`}
+              >
                 {priority.label}
               </Badge>
-              <Badge variant="outline" className="border-indigo-100">
-                {getObservationProfile(task.observation_profile).shortLabel}
-              </Badge>
-              {task.status === "in_progress" ? (
-                <Badge variant="secondary">推进中</Badge>
-              ) : null}
-              {completed ? (
-                <Badge className="bg-emerald-100 text-emerald-800">
-                  已完成
-                </Badge>
-              ) : null}
-              {archived ? <Badge variant="secondary">已归档</Badge> : null}
             </div>
-            <h2
-              className={`mt-2 truncate text-base font-semibold text-slate-950 ${completed ? "text-slate-500 line-through" : ""}`}
-            >
-              {task.title}
-            </h2>
-            <div className="mt-3 flex items-center gap-3">
-              <Progress value={progress} className="h-1.5 max-w-52" />
-              <span className="shrink-0 text-xs text-slate-500">
+            <p className="mt-1 truncate text-sm text-slate-500">
+              {readyToComplete
+                ? "所有步骤已勾选，等待你确认完成"
+                : nextStep
+                  ? `下一步 · ${nextStep.title}`
+                  : getObservationProfile(task.observation_profile).shortLabel}
+            </p>
+            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 sm:hidden">
+              <span>
                 {completedSteps}/{task.steps.length} 步
               </span>
-              <span className="hidden items-center gap-1 text-xs text-slate-500 lg:flex">
-                <Clock3 className="size-3.5" /> 预计 {task.estimated_minutes}{" "}
-                分钟
-              </span>
+              <span>预计 {task.estimated_minutes} 分钟</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2">
-            {!completed && !archived ? (
+          <div className="hidden min-w-0 sm:block">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>
+                {completedSteps}/{task.steps.length} 步
+              </span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} className="mt-2 h-1.5" />
+            <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+              <Clock3 className="size-3.5" /> 预计 {task.estimated_minutes} 分钟
+            </p>
+          </div>
+
+          <div className="col-span-full flex items-center justify-end gap-1 sm:col-span-1">
+            {readyToComplete ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" disabled={statusChanging}>
+                    {statusChanging ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 />
+                    )}
+                    确认完成
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      确认完成“{task.title}”？
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {sessionState === "current"
+                        ? "这会结束当前学习记录，保存计时并将任务移到“已完成”。复盘可以稍后再做。"
+                        : "任务会移到“已完成”，不会再出现“开始学习”。"}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>继续保留</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void onComplete()}>
+                      确认完成
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : !completed && !archived ? (
               <Button
                 size="sm"
-                className="min-w-28"
+                className="min-w-24"
                 variant={sessionState === "current" ? "secondary" : "default"}
                 onClick={onStart}
-                disabled={starting || sessionState === "blocked"}
+                disabled={
+                  starting ||
+                  sessionState === "blocked" ||
+                  !canStartTaskNow(task)
+                }
                 title={
                   sessionState === "blocked"
                     ? "请先结束当前学习会话"
@@ -609,39 +685,43 @@ function TaskRow({
                 )}
                 {sessionState === "current" ? "继续学习" : "开始学习"}
               </Button>
-            ) : archived ? (
-              <span className="px-2 text-sm text-slate-500">已归档</span>
-            ) : (
+            ) : completed ? (
               <span className="px-2 text-sm text-slate-500">
                 {task.completed_at
                   ? new Date(task.completed_at).toLocaleDateString("zh-CN")
                   : "已完成"}
               </span>
-            )}
+            ) : null}
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11 sm:size-9"
+              aria-label={expanded ? "收起任务详情" : "展开任务详情"}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((current) => !current)}
+            >
+              {expanded ? <ChevronUp /> : <ChevronDown />}
+            </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="任务操作">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  aria-label="任务操作"
+                >
                   <Ellipsis />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={onEdit}>
-                  <Pencil /> 编辑任务
-                </DropdownMenuItem>
                 {!completed && !archived ? (
-                  <DropdownMenuItem
-                    disabled={
-                      !stepsCompleted ||
-                      sessionState === "current" ||
-                      statusChanging
-                    }
-                    onSelect={() => void onComplete()}
-                  >
-                    <CheckCircle2 />
-                    {stepsCompleted ? "标记为已完成" : "完成全部步骤后可标记"}
+                  <DropdownMenuItem onSelect={onEdit}>
+                    <Pencil /> 编辑任务
                   </DropdownMenuItem>
-                ) : completed ? (
+                ) : null}
+                {completed ? (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <DropdownMenuItem
@@ -656,7 +736,7 @@ function TaskRow({
                           重新打开“{task.title}”？
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          任务会回到推进中，并允许再次开始学习；既有会话与复盘记录不会被删除。
+                          任务会回到待继续，最后一步会重新打开；既有学习和复盘记录不会被删除。
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -667,7 +747,7 @@ function TaskRow({
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                ) : (
+                ) : archived ? (
                   <DropdownMenuItem
                     disabled={statusChanging}
                     onSelect={() => void onRestore()}
@@ -679,7 +759,13 @@ function TaskRow({
                     )}
                     {statusChanging ? "正在恢复…" : "恢复到任务台"}
                   </DropdownMenuItem>
-                )}
+                ) : null}
+                <DropdownMenuItem
+                  disabled={statusChanging}
+                  onSelect={() => void onDuplicate()}
+                >
+                  <Copy /> 复制为新任务
+                </DropdownMenuItem>
                 {!completed && !archived ? (
                   <DropdownMenuItem
                     disabled={sessionState === "current" || statusChanging}
@@ -726,6 +812,81 @@ function TaskRow({
             </DropdownMenu>
           </div>
         </div>
+
+        {expanded ? (
+          <div className="grid gap-5 border-t border-indigo-100 bg-slate-50/60 px-4 py-4 md:grid-cols-[minmax(0,1.4fr)_minmax(15rem,0.6fr)]">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">任务步骤</h3>
+              <ol className="mt-2 grid gap-2 sm:grid-cols-2">
+                {task.steps.map((step, index) => (
+                  <li
+                    key={step.id}
+                    className="flex min-w-0 items-start gap-2 rounded-xl bg-white px-3 py-2 text-sm"
+                  >
+                    {step.completed ? (
+                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <span className="grid size-4 shrink-0 place-items-center rounded-full bg-indigo-50 text-[10px] font-medium text-indigo-700">
+                        {index + 1}
+                      </span>
+                    )}
+                    <span
+                      className={`min-w-0 break-words ${step.completed ? "text-slate-400 line-through" : "text-slate-700"}`}
+                    >
+                      {step.title}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                最近学习记录
+              </h3>
+              {sessionHistory.isLoading ? (
+                <div className="mt-2 space-y-2">
+                  <Skeleton className="h-8" />
+                  <Skeleton className="h-8" />
+                </div>
+              ) : sessionHistory.isError ? (
+                <div className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+                  学习记录暂时未读取。
+                  <button
+                    type="button"
+                    className="ml-1 font-medium underline underline-offset-2"
+                    onClick={() => void sessionHistory.refetch()}
+                  >
+                    重试
+                  </button>
+                </div>
+              ) : sessionHistory.data?.length ? (
+                <ul className="mt-2 space-y-1.5 text-sm text-slate-600">
+                  {sessionHistory.data.slice(0, 3).map((session) => (
+                    <li
+                      key={session.id}
+                      className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2"
+                    >
+                      <span>
+                        {session.status === "completed"
+                          ? "已完成"
+                          : session.status === "cancelled"
+                            ? "已结束"
+                            : session.status === "paused"
+                              ? "已暂停"
+                              : "计时中"}
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        {formatMinutes(session.accumulated_seconds)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">还没有学习记录。</p>
+              )}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -793,6 +954,13 @@ export function TaskDashboard() {
     })
   }, [search, sort, taskGroups, taskView])
 
+  const activeSessionTask = tasks.data?.find(
+    (task) => task.id === activeSession.data?.task_id,
+  )
+  const activeSessionReady = Boolean(
+    activeSessionTask && areTaskStepsComplete(activeSessionTask.steps),
+  )
+
   const saveTask = async (draft: TaskDraft) => {
     try {
       if (editingTask)
@@ -808,8 +976,12 @@ export function TaskDashboard() {
 
   const beginTask = async (taskId: string) => {
     const task = tasks.data?.find((item) => item.id === taskId)
-    if (!task || !canStartTask(task.status)) {
-      toast.error("已完成或已归档的任务不能直接开始")
+    if (!task || !canStartTaskNow(task)) {
+      toast.info(
+        task && areTaskStepsComplete(task.steps)
+          ? "全部步骤已完成，请先确认完成任务"
+          : "已完成或已归档的任务不能直接开始",
+      )
       return
     }
     setStartingTaskId(taskId)
@@ -831,14 +1003,9 @@ export function TaskDashboard() {
 
   const changeTaskStatus = async (
     taskId: string,
-    status: "planned" | "in_progress" | "completed" | "archived",
+    status: "planned" | "archived",
     successMessage: string,
   ) => {
-    const task = tasks.data?.find((item) => item.id === taskId)
-    if (status === "completed" && !areTaskStepsComplete(task?.steps ?? [])) {
-      toast.info("完成全部任务步骤后，才可以标记为已完成")
-      return
-    }
     if (status === "archived" && activeSession.data?.task_id === taskId) {
       toast.info("当前学习会话结束前不能归档任务")
       return
@@ -854,19 +1021,76 @@ export function TaskDashboard() {
     }
   }
 
+  const confirmTask = async (task: Task) => {
+    if (!areTaskStepsComplete(task.steps)) {
+      toast.info("请先完成所有任务步骤")
+      return
+    }
+    const linkedSession =
+      activeSession.data?.task_id === task.id ? activeSession.data : null
+    setStatusChangingTaskId(task.id)
+    try {
+      await mutations.complete.mutateAsync({
+        taskId: task.id,
+        accumulatedSeconds: linkedSession?.accumulated_seconds,
+      })
+      toast.success("任务已完成", {
+        description: "已移入“已完成”，不会再重新开始。",
+        action: linkedSession
+          ? {
+              label: "立即复盘",
+              onClick: () => router.push(`/app/review/${linkedSession.id}`),
+            }
+          : {
+              label: "查看已完成",
+              onClick: () => setTaskView("completed"),
+            },
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "确认完成失败")
+    } finally {
+      setStatusChangingTaskId(null)
+    }
+  }
+
+  const reopenTask = async (task: Task) => {
+    setStatusChangingTaskId(task.id)
+    try {
+      await mutations.reopen.mutateAsync(task.id)
+      toast.success("任务已重新打开", {
+        description: "最后一步已恢复为待完成，既有记录保留不变。",
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重新打开失败")
+    } finally {
+      setStatusChangingTaskId(null)
+    }
+  }
+
+  const duplicateExistingTask = async (task: Task) => {
+    setStatusChangingTaskId(task.id)
+    try {
+      await mutations.duplicate.mutateAsync(task)
+      setTaskView("active")
+      toast.success("已复制为新任务", {
+        description: "新任务的所有步骤均从未完成开始。",
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "复制任务失败")
+    } finally {
+      setStatusChangingTaskId(null)
+    }
+  }
+
   if (tasks.isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5" aria-label="正在读取任务">
         <Skeleton className="h-16 w-80 max-w-full" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-        </div>
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
+        <Skeleton className="h-20 w-full rounded-2xl" />
+        <div className="space-y-3">
+          <Skeleton className="h-32 w-full rounded-2xl sm:h-24" />
+          <Skeleton className="h-32 w-full rounded-2xl sm:h-24" />
+          <Skeleton className="h-32 w-full rounded-2xl sm:h-24" />
         </div>
       </div>
     )
@@ -890,7 +1114,6 @@ export function TaskDashboard() {
     <>
       <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-          <p className="section-kicker">Task desk / 学习任务台</p>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
             今天，先完成哪一件具体的事？
           </h1>
@@ -928,17 +1151,22 @@ export function TaskDashboard() {
       </section>
 
       {activeSession.data ? (
-        <Card className="mt-7 border-indigo-200 bg-indigo-700 text-white shadow-lg shadow-indigo-950/10">
+        <Card className="mt-7 border-indigo-200 bg-indigo-700 text-white">
           <CardContent className="flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
               <span className="grid size-10 place-items-center rounded-xl bg-white/15">
                 <Play className="size-5" />
               </span>
               <div>
-                <p className="font-medium">有一段学习尚未结束</p>
+                <p className="font-medium">
+                  {activeSessionReady
+                    ? "全部步骤已完成，等待确认"
+                    : "有一段学习尚未结束"}
+                </p>
                 <p className="text-sm text-indigo-100">
-                  状态：
-                  {activeSession.data.status === "paused" ? "已暂停" : "计时中"}
+                  {activeSessionReady
+                    ? "确认后会保存计时并移入已完成"
+                    : `状态：${activeSession.data.status === "paused" ? "已暂停" : "计时中"}`}
                 </p>
               </div>
             </div>
@@ -948,13 +1176,16 @@ export function TaskDashboard() {
                 router.push(`/app/session/${activeSession.data!.id}`)
               }
             >
-              继续学习 <ArrowRight />
+              {activeSessionReady ? "查看并确认" : "继续学习"} <ArrowRight />
             </Button>
           </CardContent>
         </Card>
       ) : null}
 
-      <section className="mt-7 grid gap-4 sm:grid-cols-3">
+      <section
+        aria-label="任务概览"
+        className="mt-7 grid grid-cols-3 divide-x divide-indigo-100 rounded-2xl border border-indigo-100 bg-white/80 px-2 py-4 sm:px-5"
+      >
         {[
           {
             icon: BookOpenCheck,
@@ -975,22 +1206,25 @@ export function TaskDashboard() {
             unit: "个",
           },
         ].map(({ icon: Icon, label, value, unit }) => (
-          <Card key={label} className="border-indigo-100 bg-white/80 shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <span className="grid size-11 place-items-center rounded-2xl bg-indigo-50 text-indigo-700">
-                <Icon className="size-5" />
-              </span>
-              <div>
-                <p className="text-sm text-slate-500">{label}</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-950">
-                  {value}{" "}
-                  <span className="text-sm font-normal text-slate-500">
-                    {unit}
-                  </span>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div
+            key={label}
+            className="flex min-w-0 items-center justify-center gap-2 px-2 sm:gap-3 sm:px-4"
+          >
+            <span className="hidden size-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-700 sm:grid">
+              <Icon className="size-4" />
+            </span>
+            <div className="min-w-0 text-center sm:text-left">
+              <p className="truncate text-xs text-slate-500 sm:text-sm">
+                {label}
+              </p>
+              <p className="mt-0.5 font-semibold text-slate-950 tabular-nums sm:text-lg">
+                {value}{" "}
+                <span className="text-xs font-normal text-slate-500">
+                  {unit}
+                </span>
+              </p>
+            </div>
+          </div>
         ))}
       </section>
 
@@ -1069,6 +1303,13 @@ export function TaskDashboard() {
                       starting={startingTaskId === task.id}
                       statusChanging={statusChangingTaskId === task.id}
                       sessionState={sessionState}
+                      currentSessionStatus={
+                        isCurrentSession &&
+                        (activeSession.data?.status === "running" ||
+                          activeSession.data?.status === "paused")
+                          ? activeSession.data.status
+                          : null
+                      }
                       onEdit={() => {
                         setEditingTask(task)
                         setDialogOpen(true)
@@ -1080,20 +1321,9 @@ export function TaskDashboard() {
                         }
                         void beginTask(task.id)
                       }}
-                      onComplete={() =>
-                        changeTaskStatus(
-                          task.id,
-                          "completed",
-                          "任务已标记为完成",
-                        )
-                      }
-                      onReopen={() =>
-                        changeTaskStatus(
-                          task.id,
-                          "in_progress",
-                          "任务已重新打开",
-                        )
-                      }
+                      onComplete={() => confirmTask(task)}
+                      onReopen={() => reopenTask(task)}
+                      onDuplicate={() => duplicateExistingTask(task)}
                       onRestore={() =>
                         changeTaskStatus(
                           task.id,

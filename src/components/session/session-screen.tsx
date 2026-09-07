@@ -355,7 +355,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const finish = async () => {
+  const finish = async (openReview: boolean) => {
     if (!areTaskStepsComplete(task.steps)) {
       toast.info("完成全部任务步骤后，才可以结束并复盘")
       return
@@ -368,13 +368,16 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     const accumulated = elapsedSeconds(current, now)
     dispatch({ type: "finish", nowMs: now })
     try {
-      await sessionMutations.finish.mutateAsync({
-        sessionId,
+      await taskMutations.complete.mutateAsync({
+        taskId: task.id,
         accumulatedSeconds: accumulated,
-        taskOutcome: "completed",
       })
       setFinishDialogOpen(false)
-      router.push(`/app/review/${sessionId}`)
+      if (!openReview)
+        toast.success("任务已完成", {
+          description: "已保存本次计时，你可以稍后再复盘。",
+        })
+      router.push(openReview ? `/app/review/${sessionId}` : "/app")
     } catch (error) {
       terminalNavigationRef.current = false
       dispatch({ type: "restore", state: current })
@@ -486,7 +489,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
               onClick={() => setFinishDialogOpen(true)}
               disabled={finishing}
             >
-              <Flag /> 结束并复盘
+              <Flag /> 确认完成
             </Button>
           ) : timer.mode === "running" ? (
             <Button
@@ -735,7 +738,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           <DialogHeader>
             <DialogTitle>确认完成这个任务？</DialogTitle>
             <DialogDescription>
-              所有步骤均已完成。本次计时会立即保存并进入复盘；复盘仍可跳过。
+              所有步骤均已完成。确认后会保存本次计时并将任务移入“已完成”；复盘可以现在做，也可以稍后再做。
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
@@ -754,11 +757,20 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             <Button
               type="button"
               className="w-full"
-              onClick={() => void finish()}
+              onClick={() => void finish(true)}
               disabled={finishing}
             >
               {finishing ? <RotateCcw className="animate-spin" /> : <Check />}
-              确认结束并复盘
+              完成并立即复盘
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => void finish(false)}
+              disabled={finishing}
+            >
+              <ArrowLeft /> 完成，稍后复盘
             </Button>
             <Button
               type="button"
