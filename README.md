@@ -124,10 +124,12 @@ AI 路由会先校验当前 Supabase 匿名会话，服务端重新验证三个�
 
 Supabase 端需要：
 
-1. 按顺序应用 `supabase/migrations` 中的全部迁移。
+1. 先按时间顺序应用常规迁移，但暂不应用
+   `20260907190224_revoke_direct_study_session_writes.sql`。
 2. 在 Auth 设置中开启匿名身份。
 3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
 4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
+5. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
 
 ## 测试
 
