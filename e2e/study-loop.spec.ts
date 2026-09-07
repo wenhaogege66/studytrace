@@ -144,7 +144,7 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
   await page.getByRole("checkbox").nth(1).click()
   await page.getByRole("button", { name: "结束并复盘" }).click()
   await page.getByRole("button", { name: "确认结束并复盘" }).click()
-  await page.getByRole("link", { name: "稍后复盘" }).click()
+  await page.getByRole("link", { name: "跳过复盘并返回" }).click()
   await expect(page).toHaveURL(/\/app$/)
   await page.getByRole("button", { name: "已完成 1" }).click()
   await expect(page.getByText("完成一轮物理总复习")).toBeVisible()

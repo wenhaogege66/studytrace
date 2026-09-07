@@ -595,7 +595,7 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
             </Badge>
           ) : (
             <Button variant="outline" size="sm" asChild>
-              <Link href="/app">稍后复盘</Link>
+              <Link href="/app">跳过复盘并返回</Link>
             </Button>
           )}
         </div>
