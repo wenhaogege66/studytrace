@@ -10,6 +10,7 @@ import {
   type EventDirection,
   type EventSource,
   type Review,
+  type SessionOutcome,
   type StudySession,
   type Task,
   type TaskDraft,
@@ -46,7 +47,6 @@ export async function listTasks(userId: string): Promise<Task[]> {
     .from("tasks")
     .select("*")
     .eq("user_id", userId)
-    .neq("status", "archived")
     .order("created_at", { ascending: false })
   if (error) fail("读取任务失败", error)
   return data.map(mapTask)
@@ -78,6 +78,7 @@ export async function createTask(
       steps: stepsToJson(draft.steps),
       priority: draft.priority,
       estimated_minutes: draft.estimatedMinutes,
+      observation_profile: draft.observationProfile,
     })
     .select()
     .single()
@@ -97,12 +98,30 @@ export async function updateTask(
       steps: stepsToJson(draft.steps),
       priority: draft.priority,
       estimated_minutes: draft.estimatedMinutes,
+      observation_profile: draft.observationProfile,
     })
     .eq("user_id", userId)
     .eq("id", taskId)
     .select()
     .single()
   if (error) fail("更新任务失败", error)
+  return mapTask(data)
+}
+
+export async function setTaskStepCompleted(
+  userId: string,
+  taskId: string,
+  stepId: string,
+  completed: boolean,
+): Promise<Task> {
+  const { data, error } = await getSupabase().rpc("set_task_step_completed", {
+    p_task_id: taskId,
+    p_step_id: stepId,
+    p_completed: completed,
+  })
+  if (error) fail("更新任务步骤失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("更新任务步骤失败：返回数据异常")
   return mapTask(data)
 }
 
@@ -140,6 +159,7 @@ export async function loadSampleTasks(userId: string): Promise<Task[]> {
       title: "完成光合作用实验复盘",
       priority: "high",
       estimatedMinutes: 35,
+      observationProfile: "study_paper_v1",
       steps: ["整理实验现象", "解释变量关系", "写下一个新问题"].map(
         (title, index) => ({
           id: `sample-biology-${index + 1}`,
@@ -152,6 +172,7 @@ export async function loadSampleTasks(userId: string): Promise<Task[]> {
       title: "练习三道函数综合题",
       priority: "medium",
       estimatedMinutes: 45,
+      observationProfile: "study_paper_v1",
       steps: ["标注已知条件", "独立完成推导", "核对错因"].map(
         (title, index) => ({
           id: `sample-math-${index + 1}`,
@@ -169,30 +190,46 @@ export async function startSession(
   taskId: string,
   options: { remindersEnabled: boolean; experimentMode: boolean },
 ): Promise<StudySession> {
-  const existing = await getActiveSession(userId)
-  if (existing) return existing
-
-  const now = new Date().toISOString()
-  const { data, error } = await getSupabase()
-    .from("study_sessions")
-    .insert({
-      user_id: userId,
-      task_id: taskId,
-      status: "running",
-      resumed_at: now,
-      reminders_enabled: options.remindersEnabled,
-      experiment_mode: options.experimentMode,
-    })
-    .select()
-    .single()
+  const { data, error } = await getSupabase().rpc("start_study_session", {
+    p_task_id: taskId,
+    p_reminders_enabled: options.remindersEnabled,
+    p_experiment_mode: options.experimentMode,
+  })
   if (error) fail("开始学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("开始学习失败：返回数据异常")
+  return mapSession(data)
+}
 
-  const taskUpdate = await getSupabase()
-    .from("tasks")
-    .update({ status: "in_progress" })
-    .eq("user_id", userId)
-    .eq("id", taskId)
-  if (taskUpdate.error) fail("更新任务状态失败", taskUpdate.error)
+export async function finishSession(
+  userId: string,
+  sessionId: string,
+  accumulatedSeconds: number,
+  taskOutcome: SessionOutcome,
+): Promise<StudySession> {
+  const { data, error } = await getSupabase().rpc("finish_study_session", {
+    p_session_id: sessionId,
+    p_accumulated_seconds: Math.max(0, Math.floor(accumulatedSeconds)),
+    p_task_outcome: taskOutcome,
+  })
+  if (error) fail("结束学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("结束学习失败：返回数据异常")
+  return mapSession(data)
+}
+
+export async function cancelSession(
+  userId: string,
+  sessionId: string,
+  accumulatedSeconds: number,
+): Promise<StudySession> {
+  const { data, error } = await getSupabase().rpc("cancel_study_session", {
+    p_session_id: sessionId,
+    p_accumulated_seconds: Math.max(0, Math.floor(accumulatedSeconds)),
+  })
+  if (error) fail("结束本次学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("结束本次学习失败：返回数据异常")
   return mapSession(data)
 }
 
@@ -223,20 +260,116 @@ export async function getSession(
   return data ? mapSession(data) : null
 }
 
-export async function updateSession(
+export async function pauseSession(
   userId: string,
   sessionId: string,
-  update: TablesUpdate<"study_sessions">,
+  expectedStateVersion: number,
+  accumulatedSeconds: number,
 ): Promise<StudySession> {
-  const { data, error } = await getSupabase()
-    .from("study_sessions")
-    .update(update)
-    .eq("user_id", userId)
-    .eq("id", sessionId)
-    .select()
-    .single()
-  if (error) fail("保存学习状态失败", error)
+  const { data, error } = await getSupabase().rpc("pause_study_session", {
+    p_session_id: sessionId,
+    p_expected_state_version: expectedStateVersion,
+    p_accumulated_seconds: accumulatedSeconds,
+  })
+  if (error) fail("暂停学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("暂停学习失败：返回数据异常")
   return mapSession(data)
+}
+
+export async function resumeSession(
+  userId: string,
+  sessionId: string,
+  expectedStateVersion: number,
+): Promise<StudySession> {
+  const { data, error } = await getSupabase().rpc("resume_study_session", {
+    p_session_id: sessionId,
+    p_expected_state_version: expectedStateVersion,
+  })
+  if (error) fail("恢复学习失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("恢复学习失败：返回数据异常")
+  return mapSession(data)
+}
+
+export async function setSessionCameraEnabled(
+  userId: string,
+  sessionId: string,
+  expectedStateVersion: number,
+  cameraVersion: number,
+  enabled: boolean,
+): Promise<StudySession> {
+  const { data, error } = await getSupabase().rpc("set_study_session_camera", {
+    p_session_id: sessionId,
+    p_expected_state_version: expectedStateVersion,
+    p_camera_version: cameraVersion,
+    p_enabled: enabled,
+  })
+  if (error) fail("保存摄像头状态失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("保存摄像头状态失败：返回数据异常")
+  return mapSession(data)
+}
+
+export async function checkpointRunningSession(
+  userId: string,
+  sessionId: string,
+  expectedResumedAt: string,
+  accumulatedSeconds: number,
+  checkpointedAt: string,
+): Promise<StudySession> {
+  const { data, error } = await getSupabase().rpc(
+    "checkpoint_running_session",
+    {
+      p_session_id: sessionId,
+      p_expected_resumed_at: expectedResumedAt,
+      p_accumulated_seconds: accumulatedSeconds,
+      p_checkpointed_at: checkpointedAt,
+    },
+  )
+  if (error) fail("保存学习计时失败", error)
+  if (!data || data.user_id !== userId)
+    throw new Error("保存学习计时失败：返回数据异常")
+  return mapSession(data)
+}
+
+export async function pauseRunningSessionForNavigation(
+  sessionId: string,
+): Promise<StudySession> {
+  const supabase = getSupabase()
+  const current = await supabase
+    .from("study_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .maybeSingle()
+  if (current.error) fail("读取学习状态失败", current.error)
+  if (!current.data) throw new Error("学习会话不存在或已被清除")
+
+  let session = mapSession(current.data)
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (session.status === "completed" || session.status === "cancelled")
+      return session
+
+    const resumedAt = session.resumed_at
+      ? new Date(session.resumed_at).getTime()
+      : null
+    const accumulatedSeconds =
+      session.accumulated_seconds +
+      (session.status === "running" && resumedAt !== null
+        ? Math.max(0, Math.floor((Date.now() - resumedAt) / 1_000))
+        : 0)
+
+    session = await pauseSession(
+      session.user_id,
+      session.id,
+      session.state_version,
+      accumulatedSeconds,
+    )
+    if (session.status === "paused") return session
+  }
+
+  throw new Error("学习状态正在另一个页面变化，请再试一次")
 }
 
 export async function listBehaviorEvents(

@@ -9,11 +9,13 @@ import {
   Sparkles,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import type { ReactNode } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { useRef, type ReactNode } from "react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { pauseRunningSessionForNavigation } from "@/lib/data/study-repository"
 import { cn } from "@/lib/utils"
 
 const navigation = [
@@ -23,6 +25,32 @@ const navigation = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const pausingForNavigationRef = useRef(false)
+  const guardNavigation = (
+    event: { preventDefault: () => void },
+    href: string,
+  ) => {
+    const routeSessionId = window.location.pathname.match(
+      /^\/app\/session\/([^/]+)/,
+    )?.[1]
+    if (!routeSessionId) return
+    event.preventDefault()
+    if (pausingForNavigationRef.current) return
+    pausingForNavigationRef.current = true
+    void pauseRunningSessionForNavigation(routeSessionId)
+      .then(() => router.push(href))
+      .catch((error: unknown) =>
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "暂停失败，已留在当前学习页面",
+        ),
+      )
+      .finally(() => {
+        pausingForNavigationRef.current = false
+      })
+  }
 
   return (
     <div className="min-h-screen bg-[var(--app-canvas)]">
@@ -30,6 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link
             href="/app"
+            onNavigate={(event) => guardNavigation(event, "/app")}
             className="group flex items-center gap-2.5"
             aria-label="学迹任务首页"
           >
@@ -60,7 +89,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                   variant={active ? "secondary" : "ghost"}
                   asChild
                 >
-                  <Link href={href} aria-current={active ? "page" : undefined}>
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    onNavigate={(event) => guardNavigation(event, href)}
+                  >
                     <Icon /> {label}
                   </Link>
                 </Button>
@@ -68,7 +101,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             })}
             <Separator orientation="vertical" className="mx-2 h-6" />
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/" aria-label="返回产品介绍">
+              <Link
+                href="/"
+                aria-label="返回产品介绍"
+                onNavigate={(event) => guardNavigation(event, "/")}
+              >
                 <Home />
               </Link>
             </Button>
@@ -100,6 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               key={href}
               href={href}
+              onNavigate={(event) => guardNavigation(event, href)}
               className={cn(
                 "flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium text-slate-500",
                 active && "bg-indigo-50 text-indigo-800",
@@ -111,6 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
         <Link
           href="/"
+          onNavigate={(event) => guardNavigation(event, "/")}
           className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium text-slate-500"
         >
           <Sparkles className="size-4" /> 介绍

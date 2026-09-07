@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -169,14 +169,18 @@ export type Database = {
         Row: {
           accumulated_seconds: number
           camera_enabled: boolean
+          camera_version: number
           created_at: string
           ended_at: string | null
           experiment_mode: boolean
           id: string
+          observation_profile: string
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
+          state_version: number
           status: string
+          task_outcome: string | null
           task_id: string
           updated_at: string
           user_id: string
@@ -184,14 +188,18 @@ export type Database = {
         Insert: {
           accumulated_seconds?: number
           camera_enabled?: boolean
+          camera_version?: number
           created_at?: string
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
+          observation_profile?: string
           reminders_enabled?: boolean
           resumed_at?: string | null
           started_at?: string
+          state_version?: number
           status?: string
+          task_outcome?: string | null
           task_id: string
           updated_at?: string
           user_id: string
@@ -199,14 +207,18 @@ export type Database = {
         Update: {
           accumulated_seconds?: number
           camera_enabled?: boolean
+          camera_version?: number
           created_at?: string
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
+          observation_profile?: string
           reminders_enabled?: boolean
           resumed_at?: string | null
           started_at?: string
+          state_version?: number
           status?: string
+          task_outcome?: string | null
           task_id?: string
           updated_at?: string
           user_id?: string
@@ -227,6 +239,7 @@ export type Database = {
           created_at: string
           estimated_minutes: number
           id: string
+          observation_profile: string
           priority: string
           status: string
           steps: Json
@@ -239,6 +252,7 @@ export type Database = {
           created_at?: string
           estimated_minutes: number
           id?: string
+          observation_profile?: string
           priority?: string
           status?: string
           steps?: Json
@@ -251,6 +265,7 @@ export type Database = {
           created_at?: string
           estimated_minutes?: number
           id?: string
+          observation_profile?: string
           priority?: string
           status?: string
           steps?: Json
@@ -328,7 +343,252 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cancel_study_session: {
+        Args: { p_accumulated_seconds: number; p_session_id: string }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      checkpoint_running_session: {
+        Args: {
+          p_accumulated_seconds: number
+          p_checkpointed_at: string
+          p_expected_resumed_at: string
+          p_session_id: string
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      consume_ai_generation_quota: { Args: never; Returns: boolean }
       delete_my_data: { Args: never; Returns: undefined }
+      finish_study_session: {
+        Args: {
+          p_accumulated_seconds: number
+          p_session_id: string
+          p_task_outcome: string
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      pause_study_session: {
+        Args: {
+          p_accumulated_seconds: number
+          p_expected_state_version: number
+          p_session_id: string
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      resume_study_session: {
+        Args: { p_expected_state_version: number; p_session_id: string }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      set_study_session_camera: {
+        Args: {
+          p_camera_version: number
+          p_enabled: boolean
+          p_expected_state_version: number
+          p_session_id: string
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      set_task_step_completed: {
+        Args: {
+          p_completed: boolean
+          p_step_id: string
+          p_task_id: string
+        }
+        Returns: {
+          completed_at: string | null
+          created_at: string
+          estimated_minutes: number
+          id: string
+          observation_profile: string
+          priority: string
+          status: string
+          steps: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      start_study_session: {
+        Args: {
+          p_experiment_mode?: boolean
+          p_reminders_enabled?: boolean
+          p_task_id: string
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never
@@ -461,4 +721,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

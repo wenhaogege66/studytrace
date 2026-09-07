@@ -1,15 +1,23 @@
 "use client"
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 
 import { useExperience } from "@/components/experience/experience-provider"
 import {
+  checkpointRunningSession,
+  cancelSession,
   createBehaviorEvent,
   createReminderEvent,
   createTask,
   deleteAllMyData,
   deleteBehaviorEvent,
   deleteTask,
+  finishSession,
   getActiveSession,
   getReview,
   getSession,
@@ -18,11 +26,14 @@ import {
   listBehaviorEvents,
   listTasks,
   loadSampleTasks,
+  pauseSession,
+  resumeSession,
   saveReview,
+  setSessionCameraEnabled,
+  setTaskStepCompleted,
   setTaskStatus,
   startSession,
   updateBehaviorEvent,
-  updateSession,
   updateSettings,
   updateTask,
 } from "@/lib/data/study-repository"
@@ -31,8 +42,15 @@ import type {
   CompletionStatus,
   EventDirection,
   EventSource,
+  SessionOutcome,
+  StudySession,
   TaskDraft,
 } from "@/lib/domain"
+import {
+  mergeActiveMutationSnapshot,
+  mergeActiveQuerySnapshot,
+  mergeSessionSnapshot,
+} from "@/lib/session/cache"
 import type { TablesUpdate } from "@/types/database"
 
 export const studyKeys = {
@@ -54,6 +72,50 @@ function useUserId() {
   return user.id
 }
 
+function cacheSession(
+  queryClient: QueryClient,
+  userId: string,
+  incoming: StudySession,
+) {
+  let accepted = false
+  queryClient.setQueryData<StudySession | null>(
+    studyKeys.session(userId, incoming.id),
+    (current) => {
+      const merged = mergeSessionSnapshot(current, incoming)
+      accepted = merged === incoming
+      return merged
+    },
+  )
+  if (!accepted) return
+
+  let conflict = false
+  queryClient.setQueryData<StudySession | null>(
+    studyKeys.activeSession(userId),
+    (current) => {
+      const merged = mergeActiveMutationSnapshot(current, incoming)
+      conflict = merged.conflict
+      return merged.value
+    },
+  )
+  if (conflict)
+    void queryClient.invalidateQueries({
+      queryKey: studyKeys.activeSession(userId),
+    })
+}
+
+async function cancelSessionQueries(
+  queryClient: QueryClient,
+  userId: string,
+  sessionId: string,
+) {
+  await Promise.all([
+    queryClient.cancelQueries({
+      queryKey: studyKeys.session(userId, sessionId),
+    }),
+    queryClient.cancelQueries({ queryKey: studyKeys.activeSession(userId) }),
+  ])
+}
+
 export function useTasks() {
   const userId = useUserId()
   return useQuery({
@@ -73,17 +135,28 @@ export function useTask(taskId: string | undefined) {
 
 export function useActiveSession() {
   const userId = useUserId()
-  return useQuery({
+  return useQuery<StudySession | null>({
     queryKey: studyKeys.activeSession(userId),
     queryFn: () => getActiveSession(userId),
+    structuralSharing: (current, incoming) =>
+      mergeActiveQuerySnapshot(
+        current as StudySession | null | undefined,
+        incoming as StudySession | null,
+      ),
   })
 }
 
-export function useSession(sessionId: string) {
+export function useSession(sessionId: string | undefined) {
   const userId = useUserId()
-  return useQuery({
-    queryKey: studyKeys.session(userId, sessionId),
-    queryFn: () => getSession(userId, sessionId),
+  return useQuery<StudySession | null>({
+    queryKey: studyKeys.session(userId, sessionId ?? "missing"),
+    queryFn: () => getSession(userId, sessionId!),
+    enabled: Boolean(sessionId),
+    structuralSharing: (current, incoming) =>
+      mergeSessionSnapshot(
+        current as StudySession | null | undefined,
+        incoming as StudySession | null,
+      ),
   })
 }
 
@@ -130,6 +203,26 @@ export function useTaskMutations() {
         await refresh()
       },
     }),
+    step: useMutation({
+      mutationFn: ({
+        taskId,
+        stepId,
+        completed,
+      }: {
+        taskId: string
+        stepId: string
+        completed: boolean
+      }) => setTaskStepCompleted(userId, taskId, stepId, completed),
+      onSuccess: async (task) => {
+        queryClient.setQueryData(studyKeys.task(userId, task.id), task)
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: studyKeys.task(userId, task.id),
+          }),
+          refresh(),
+        ])
+      },
+    }),
     remove: useMutation({
       mutationFn: (taskId: string) => deleteTask(userId, taskId),
       onSuccess: refresh,
@@ -160,6 +253,10 @@ export function useSessionMutations() {
 
   return {
     start: useMutation({
+      onMutate: () =>
+        queryClient.cancelQueries({
+          queryKey: studyKeys.activeSession(userId),
+        }),
       mutationFn: ({
         taskId,
         remindersEnabled,
@@ -170,29 +267,124 @@ export function useSessionMutations() {
         experimentMode: boolean
       }) => startSession(userId, taskId, { remindersEnabled, experimentMode }),
       onSuccess: (session) => {
-        queryClient.setQueryData(studyKeys.activeSession(userId), session)
-        queryClient.setQueryData(studyKeys.session(userId, session.id), session)
+        cacheSession(queryClient, userId, session)
         void queryClient.invalidateQueries({
           queryKey: studyKeys.tasks(userId),
         })
       },
     }),
-    update: useMutation({
+    pause: useMutation({
+      onMutate: ({ sessionId }) =>
+        cancelSessionQueries(queryClient, userId, sessionId),
       mutationFn: ({
         sessionId,
-        update,
+        expectedStateVersion,
+        accumulatedSeconds,
       }: {
         sessionId: string
-        update: TablesUpdate<"study_sessions">
-      }) => updateSession(userId, sessionId, update),
+        expectedStateVersion: number
+        accumulatedSeconds: number
+      }) =>
+        pauseSession(
+          userId,
+          sessionId,
+          expectedStateVersion,
+          accumulatedSeconds,
+        ),
+      onSuccess: (session) => cacheSession(queryClient, userId, session),
+    }),
+    resume: useMutation({
+      onMutate: ({ sessionId }) =>
+        cancelSessionQueries(queryClient, userId, sessionId),
+      mutationFn: ({
+        sessionId,
+        expectedStateVersion,
+      }: {
+        sessionId: string
+        expectedStateVersion: number
+      }) => resumeSession(userId, sessionId, expectedStateVersion),
+      onSuccess: (session) => cacheSession(queryClient, userId, session),
+    }),
+    camera: useMutation({
+      mutationFn: ({
+        sessionId,
+        expectedStateVersion,
+        cameraVersion,
+        enabled,
+      }: {
+        sessionId: string
+        expectedStateVersion: number
+        cameraVersion: number
+        enabled: boolean
+      }) =>
+        setSessionCameraEnabled(
+          userId,
+          sessionId,
+          expectedStateVersion,
+          cameraVersion,
+          enabled,
+        ),
+    }),
+    checkpoint: useMutation({
+      mutationFn: ({
+        sessionId,
+        expectedResumedAt,
+        accumulatedSeconds,
+        checkpointedAt,
+      }: {
+        sessionId: string
+        expectedResumedAt: string
+        accumulatedSeconds: number
+        checkpointedAt: string
+      }) =>
+        checkpointRunningSession(
+          userId,
+          sessionId,
+          expectedResumedAt,
+          accumulatedSeconds,
+          checkpointedAt,
+        ),
+    }),
+    finish: useMutation({
+      onMutate: ({ sessionId }) =>
+        cancelSessionQueries(queryClient, userId, sessionId),
+      mutationFn: ({
+        sessionId,
+        accumulatedSeconds,
+        taskOutcome,
+      }: {
+        sessionId: string
+        accumulatedSeconds: number
+        taskOutcome: SessionOutcome
+      }) => finishSession(userId, sessionId, accumulatedSeconds, taskOutcome),
       onSuccess: (session) => {
-        queryClient.setQueryData(studyKeys.session(userId, session.id), session)
-        queryClient.setQueryData(
-          studyKeys.activeSession(userId),
-          session.status === "running" || session.status === "paused"
-            ? session
-            : null,
-        )
+        cacheSession(queryClient, userId, session)
+        void queryClient.invalidateQueries({
+          queryKey: studyKeys.task(userId, session.task_id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: studyKeys.tasks(userId),
+        })
+      },
+    }),
+    cancel: useMutation({
+      onMutate: ({ sessionId }) =>
+        cancelSessionQueries(queryClient, userId, sessionId),
+      mutationFn: ({
+        sessionId,
+        accumulatedSeconds,
+      }: {
+        sessionId: string
+        accumulatedSeconds: number
+      }) => cancelSession(userId, sessionId, accumulatedSeconds),
+      onSuccess: (session) => {
+        cacheSession(queryClient, userId, session)
+        void queryClient.invalidateQueries({
+          queryKey: studyKeys.task(userId, session.task_id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: studyKeys.tasks(userId),
+        })
       },
     }),
   }

@@ -9,3 +9,5 @@ minimumReleaseAgeExclude:
   - "@supabase/realtime-js@2.112.0"
   - "@supabase/storage-js@2.112.0"
   - "@supabase/supabase-js@2.112.0"
+overrides:
+  nanoid: 3.3.18

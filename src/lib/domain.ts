@@ -1,4 +1,8 @@
 import type { Json, Tables } from "@/types/database"
+import {
+  parseObservationProfile,
+  type ObservationProfile,
+} from "@/lib/vision/profiles"
 
 export type Priority = "low" | "medium" | "high"
 export type TaskStatus = "planned" | "in_progress" | "completed" | "archived"
@@ -9,6 +13,7 @@ export type EventDirection = "left" | "right" | "down" | "unknown"
 export type EventSource = "vision" | "simulation" | "manual"
 export type CompletionStatus =
   "completed" | "partially_completed" | "not_completed"
+export type SessionOutcome = CompletionStatus
 
 export type TaskStep = {
   id: string
@@ -20,10 +25,16 @@ export type Task = Omit<Tables<"tasks">, "steps" | "priority" | "status"> & {
   steps: TaskStep[]
   priority: Priority
   status: TaskStatus
+  observation_profile: ObservationProfile
 }
 
-export type StudySession = Omit<Tables<"study_sessions">, "status"> & {
+export type StudySession = Omit<
+  Tables<"study_sessions">,
+  "status" | "task_outcome" | "observation_profile"
+> & {
   status: SessionStatus
+  task_outcome: SessionOutcome | null
+  observation_profile: ObservationProfile
 }
 
 export type BehaviorEvent = Omit<
@@ -46,6 +57,7 @@ export type TaskDraft = {
   steps: TaskStep[]
   priority: Priority
   estimatedMinutes: number
+  observationProfile: ObservationProfile
 }
 
 export function createStep(title: string): TaskStep {
@@ -80,11 +92,29 @@ export function mapTask(row: Tables<"tasks">): Task {
     priority: row.priority as Priority,
     status: row.status as TaskStatus,
     steps: parseTaskSteps(row.steps),
+    observation_profile: parseObservationProfile(row.observation_profile),
   }
 }
 
 export function mapSession(row: Tables<"study_sessions">): StudySession {
-  return { ...row, status: row.status as SessionStatus }
+  return {
+    ...row,
+    status: row.status as SessionStatus,
+    task_outcome: row.task_outcome as SessionOutcome | null,
+    observation_profile: parseObservationProfile(row.observation_profile),
+  }
+}
+
+export function canStartTask(status: TaskStatus) {
+  return status === "planned" || status === "in_progress"
+}
+
+export function areTaskStepsComplete(steps: TaskStep[]) {
+  return steps.length > 0 && steps.every((step) => step.completed)
+}
+
+export function taskStatusForOutcome(outcome: SessionOutcome): TaskStatus {
+  return outcome === "completed" ? "completed" : "in_progress"
 }
 
 export function mapBehaviorEvent(

@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
 import {
@@ -65,7 +65,6 @@ import {
   useReviewMutation,
   useSession,
   useTask,
-  useTaskMutations,
 } from "@/hooks/use-study-data"
 import {
   formatMinutes,
@@ -73,6 +72,7 @@ import {
   type CompletionStatus,
   type EventDirection,
   type Review,
+  type SessionOutcome,
 } from "@/lib/domain"
 
 function sourceLabel(source: BehaviorEvent["source"]) {
@@ -345,17 +345,16 @@ function EventItem({
 
 function ReviewFormCard({
   sessionId,
-  taskId,
   initialReview,
+  sessionOutcome,
 }: {
   sessionId: string
-  taskId: string
   initialReview: Review | null
+  sessionOutcome: SessionOutcome | null
 }) {
   const reviewMutation = useReviewMutation(sessionId)
-  const taskMutations = useTaskMutations()
   const [completionStatus, setCompletionStatus] = useState<CompletionStatus>(
-    initialReview?.completion_status ?? "completed",
+    initialReview?.completion_status ?? sessionOutcome ?? "completed",
   )
   const [selfRating, setSelfRating] = useState(initialReview?.self_rating ?? 4)
   const [incompleteReason, setIncompleteReason] = useState(
@@ -373,10 +372,6 @@ function ReviewFormCard({
         selfRating,
         incompleteReason,
         nextAdjustment,
-      })
-      await taskMutations.setStatus.mutateAsync({
-        taskId,
-        status: completionStatus === "completed" ? "completed" : "in_progress",
       })
       toast.success("这次复盘已经保存")
     } catch (saveError) {
@@ -411,6 +406,9 @@ function ReviewFormCard({
                 <SelectItem value="not_completed">未完成</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs leading-5 text-slate-500">
+              这里只描述本次学习，不会改变整个任务的完成状态。
+            </p>
           </div>
           <div className="space-y-2">
             <Label>这次学习的自我感受（1–5）</Label>
@@ -461,9 +459,7 @@ function ReviewFormCard({
           <Button
             type="submit"
             className="w-full"
-            disabled={
-              reviewMutation.isPending || taskMutations.setStatus.isPending
-            }
+            disabled={reviewMutation.isPending}
           >
             {reviewMutation.isPending ? (
               <LoaderCircle className="animate-spin" />
@@ -490,6 +486,13 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
   const task = useTask(session.data?.task_id)
   const events = useBehaviorEvents(sessionId)
   const existingReview = useReview(sessionId)
+  const sessionStatus = session.data?.status
+
+  useEffect(() => {
+    if (sessionStatus === "running" || sessionStatus === "paused")
+      router.replace(`/app/session/${sessionId}`)
+  }, [router, sessionId, sessionStatus])
+
   const eventStats = useMemo(() => {
     const list: BehaviorEvent[] = events.data ?? []
     return {
@@ -554,10 +557,8 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
     )
   }
 
-  if (session.data.status === "running" || session.data.status === "paused") {
-    router.replace(`/app/session/${sessionId}`)
-    return null
-  }
+  if (session.data.status === "running" || session.data.status === "paused")
+    return <Skeleton className="h-80 w-full" />
 
   return (
     <>
@@ -576,13 +577,28 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
             不评价“好不好”，只找到下一次可操作的调整。
           </p>
         </div>
-        {existingReview.data ? (
-          <Badge className="w-fit bg-emerald-100 text-emerald-800">
-            <CheckCircle2 /> 已保存复盘
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            className={
+              session.data.task_outcome === "completed"
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-indigo-100 text-indigo-800"
+            }
+          >
+            {session.data.task_outcome === "completed"
+              ? "整个任务已完成"
+              : "任务将继续推进"}
           </Badge>
-        ) : (
-          <Badge variant="outline">等待复盘</Badge>
-        )}
+          {existingReview.data ? (
+            <Badge className="bg-emerald-100 text-emerald-800">
+              <CheckCircle2 /> 已保存复盘
+            </Badge>
+          ) : (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/app">稍后复盘</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <section className="mt-7 grid gap-4 sm:grid-cols-3">
@@ -663,8 +679,8 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
         <ReviewFormCard
           key={existingReview.data?.updated_at ?? "new-review"}
           sessionId={sessionId}
-          taskId={task.data.id}
           initialReview={existingReview.data ?? null}
+          sessionOutcome={session.data.task_outcome}
         />
       </div>
 

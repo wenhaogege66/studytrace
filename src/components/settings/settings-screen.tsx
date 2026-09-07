@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Volume2,
 } from "lucide-react"
@@ -193,6 +194,12 @@ export function SettingsScreen() {
                     "摄像头视频、图片、音频、人脸关键点、人脸特征和可重建画面的帧。",
                 },
                 {
+                  icon: Sparkles,
+                  title: "按需发送给 AI",
+                  description:
+                    "仅在你点击“AI 生成 3 步”时，将任务标题和预计时长发送给阿里云百炼；不发送摄像头、视觉事件或已有学习记录。",
+                },
+                {
                   icon: ShieldCheck,
                   title: "隔离方式",
                   description:
@@ -206,10 +213,14 @@ export function SettingsScreen() {
                     description={description}
                   >
                     <Badge variant={index === 1 ? "secondary" : "outline"}>
-                      {index === 1 ? "0 条" : "仅当前匿名会话"}
+                      {index === 1
+                        ? "0 条"
+                        : index === 2
+                          ? "仅主动点击时"
+                          : "仅当前匿名会话"}
                     </Badge>
                   </SettingRow>
-                  {index < 2 ? <Separator /> : null}
+                  {index < 3 ? <Separator /> : null}
                 </div>
               ))}
             </CardContent>
@@ -236,16 +247,10 @@ export function SettingsScreen() {
             <CardContent>
               <SettingRow
                 icon={Camera}
-                title="摄像头默认开启"
-                description={`浏览器权限：${cameraPermission === "granted" ? "已允许" : cameraPermission === "denied" ? "已拒绝" : cameraPermission === "prompt" ? "使用时询问" : "未知"}。为降低意外采集风险，默认建议关闭。`}
+                title="摄像头始终手动开启"
+                description={`浏览器权限：${cameraPermission === "granted" ? "已允许" : cameraPermission === "denied" ? "已拒绝" : cameraPermission === "prompt" ? "使用时询问" : "未知"}。StudyTrace 不会自动打开摄像头；每次学习会话都由你主动开启。`}
               >
-                <Switch
-                  checked={value.camera_enabled_default}
-                  onCheckedChange={(checked) =>
-                    void save({ camera_enabled_default: checked })
-                  }
-                  aria-label="摄像头默认开启"
-                />
+                <Badge variant="secondary">默认关闭</Badge>
               </SettingRow>
               <Separator />
               <SettingRow
@@ -273,7 +278,8 @@ export function SettingsScreen() {
                 <div>
                   <CardTitle>识别阈值</CardTitle>
                   <CardDescription className="mt-1">
-                    以 4 FPS 滚动窗口去抖。实验模式开启时会临时使用演示阈值。
+                    以 4 FPS
+                    滚动窗口去抖。纸笔学习会自动延长无人脸阈值并忽略低头，离设备任务不会开启摄像头；实验模式会临时使用演示阈值。
                   </CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={resetThresholds}>
@@ -413,7 +419,8 @@ export function SettingsScreen() {
                 永久清除全部业务数据
               </CardTitle>
               <CardDescription>
-                删除任务、会话、事件、提醒、复盘与设置。匿名会话本身仍留在当前浏览器，以便继续创建新数据。
+                删除任务、会话、事件、提醒、复盘、设置与临时 AI
+                限流计数。匿名会话本身仍留在当前浏览器，以便继续创建新数据。
               </CardDescription>
             </CardHeader>
             <CardContent>
