@@ -65,15 +65,15 @@ const principles: Feature[] = [
   },
   {
     icon: LockKeyhole,
-    title: "匿名且逐行隔离",
+    title: "身份可选且逐行隔离",
     description:
-      "Supabase 匿名身份使用 RLS；每次查询都受 auth.uid() 所有权约束。",
+      "临时身份与邮箱账号都使用 RLS；每次查询都受 auth.uid() 所有权约束。",
   },
   {
     icon: TimerReset,
     title: "可删除、会过期",
     description:
-      "事件可确认、改写或硬删除；全部数据可一键清除，匿名记录默认保留 30 天。",
+      "事件可确认、改写或硬删除；临时身份连续 30 天无活动后才会清理。",
   },
 ]
 
@@ -158,7 +158,8 @@ export default function Home() {
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-500">
               <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className="size-4 text-emerald-600" /> 无账号概念
+                <CheckCircle2 className="size-4 text-emerald-600" />{" "}
+                无需注册即可体验
               </span>
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-emerald-600" />{" "}

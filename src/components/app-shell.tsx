@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useRef, type ReactNode } from "react"
 import { toast } from "sonner"
 
+import { AccountStatusButton } from "@/components/auth/account-status-button"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
@@ -77,6 +78,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
+          <div className="sm:hidden">
+            <AccountStatusButton
+              onNavigate={(event) => guardNavigation(event, "/auth")}
+            />
+          </div>
+
           <nav
             className="hidden items-center gap-1 sm:flex"
             aria-label="应用导航"
@@ -101,6 +108,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Button>
               )
             })}
+            <AccountStatusButton
+              onNavigate={(event) => guardNavigation(event, "/auth")}
+            />
             <Separator orientation="vertical" className="mx-2 h-6" />
             <Button variant="ghost" size="icon" asChild>
               <Link
