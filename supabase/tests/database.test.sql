@@ -138,6 +138,150 @@ begin
 end;
 $$;
 
+do $$
+declare
+  quota_definition text;
+begin
+  select pg_get_functiondef('private.enforce_user_row_quota()'::regprocedure)
+  into quota_definition;
+
+  if quota_definition not like '%tg_table_name = ''reviews''%'
+    or quota_definition not like '%session_id = review_session_id%'
+  then
+    raise exception 'review upserts must remain editable at the row quota';
+  end if;
+end;
+$$;
+
+-- Editing an existing per-session review must still work when the user has
+-- reached the 1,000-review cap. BEFORE INSERT triggers run before PostgreSQL
+-- resolves the ON CONFLICT update branch.
+insert into auth.users (
+  id,
+  aud,
+  role,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  is_anonymous,
+  created_at,
+  updated_at
+)
+values (
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  'authenticated',
+  'authenticated',
+  '{"provider":"anonymous","providers":["anonymous"]}',
+  '{}',
+  true,
+  now(),
+  now()
+);
+
+insert into public.tasks (
+  id,
+  user_id,
+  title,
+  steps,
+  priority,
+  estimated_minutes
+)
+values (
+  '10000000-0000-4000-8000-000000000099',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '复盘配额边界测试',
+  '[{"id":"step-1","title":"验证更新","completed":true}]',
+  'medium',
+  20
+);
+
+insert into public.study_sessions (
+  id,
+  user_id,
+  task_id,
+  status,
+  accumulated_seconds,
+  started_at,
+  resumed_at,
+  ended_at,
+  camera_enabled
+)
+select
+  gen_random_uuid(),
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  '10000000-0000-4000-8000-000000000099',
+  'completed',
+  60,
+  now() - interval '2 minutes',
+  null,
+  now() - interval '1 minute',
+  false
+from generate_series(1, 1000);
+
+insert into public.reviews (
+  user_id,
+  session_id,
+  completion_status,
+  self_rating
+)
+select
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  id,
+  'completed',
+  3
+from public.study_sessions
+where user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  true
+);
+select set_config('request.jwt.claim.role', 'authenticated', true);
+
+insert into public.reviews (
+  user_id,
+  session_id,
+  completion_status,
+  self_rating
+)
+select
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  id,
+  'completed',
+  5
+from public.study_sessions
+where user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+order by created_at
+limit 1
+on conflict (session_id) do update
+set self_rating = excluded.self_rating;
+
+do $$
+begin
+  if (
+    select count(*)
+    from public.reviews
+    where user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  ) <> 1000 then
+    raise exception 'review quota changed during upsert';
+  end if;
+
+  if not exists (
+    select 1
+    from public.reviews
+    where user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+      and self_rating = 5
+  ) then
+    raise exception 'existing review did not update at quota';
+  end if;
+end;
+$$;
+
+reset role;
+delete from auth.users
+where id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
 insert into auth.users (
   id,
   aud,

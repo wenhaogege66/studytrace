@@ -15,7 +15,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { pauseRunningSessionForNavigation } from "@/lib/data/study-repository"
+import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
 import { cn } from "@/lib/utils"
 
 const navigation = [
@@ -26,6 +26,7 @@ const navigation = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const pauseForNavigation = usePauseSessionForNavigation()
   const pausingForNavigationRef = useRef(false)
   const guardNavigation = (
     event: { preventDefault: () => void },
@@ -38,7 +39,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     event.preventDefault()
     if (pausingForNavigationRef.current) return
     pausingForNavigationRef.current = true
-    void pauseRunningSessionForNavigation(routeSessionId)
+    void pauseForNavigation
+      .mutateAsync(routeSessionId)
       .then(() => router.push(href))
       .catch((error: unknown) =>
         toast.error(

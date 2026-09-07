@@ -26,6 +26,7 @@ import {
   listBehaviorEvents,
   listTasks,
   loadSampleTasks,
+  pauseRunningSessionForNavigation,
   pauseSession,
   resumeSession,
   saveReview,
@@ -388,6 +389,19 @@ export function useSessionMutations() {
       },
     }),
   }
+}
+
+export function usePauseSessionForNavigation() {
+  const userId = useUserId()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    onMutate: (sessionId: string) =>
+      cancelSessionQueries(queryClient, userId, sessionId),
+    mutationFn: (sessionId: string) =>
+      pauseRunningSessionForNavigation(sessionId),
+    onSuccess: (session) => cacheSession(queryClient, userId, session),
+  })
 }
 
 export function useEventMutations(sessionId: string) {
