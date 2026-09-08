@@ -138,8 +138,10 @@ begin
   delete_my_data_definition := lower(pg_get_functiondef(
     'public.delete_my_data()'::regprocedure
   ));
-  if position('private.lock_insight_parent_flow' in checkpoint_definition) = 0
-    or position('private.lock_insight_parent_flow' in checkpoint_definition)
+  if position('studytrace:owner-mutation:' in checkpoint_definition) = 0
+    or position('private.lock_insight_owner' in checkpoint_definition)
+      < position('studytrace:owner-mutation:' in checkpoint_definition)
+    or position('private.lock_insight_owner' in checkpoint_definition)
       > position('for update' in checkpoint_definition)
     or position(
       'private.lock_insight_parent_flow' in observation_heartbeat_definition
@@ -159,12 +161,11 @@ begin
     or position(
       'private.lock_insight_parent_flow' in preference_update_definition
     ) > position('update public.user_settings' in preference_update_definition)
-    or position(
-      'private.lock_insight_parent_flow' in delete_my_data_definition
-    ) = 0
-    or position(
-      'private.lock_insight_parent_flow' in delete_my_data_definition
-    ) > position('delete from public.reminder_events' in delete_my_data_definition)
+    or position('studytrace:owner-mutation:' in delete_my_data_definition) = 0
+    or position('private.lock_insight_owner' in delete_my_data_definition)
+      < position('studytrace:owner-mutation:' in delete_my_data_definition)
+    or position('private.lock_insight_owner' in delete_my_data_definition)
+      > position('delete from public.reminder_events' in delete_my_data_definition)
   then
     raise exception 'PR4 lifecycle RPC acquired a row before owner/insight locks';
   end if;

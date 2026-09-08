@@ -91,7 +91,7 @@ revoke all on function private.lock_insight_owner(uuid)
 -- Keep this function insight-only: replacing the PR3 core helper here would
 -- silently discard the account/AI quota locks that it already holds.
 create or replace function private.lock_account_flow_extension_resources(
-  p_user_ids uuid[]
+  p_ordered_user_ids uuid[]
 )
 returns void
 language plpgsql
@@ -104,7 +104,7 @@ begin
   for owner_id in
     select candidate.user_id
     from pg_catalog.unnest(
-      coalesce(p_user_ids, array[]::uuid[])
+      coalesce(p_ordered_user_ids, array[]::uuid[])
     ) as candidate(user_id)
     where candidate.user_id is not null
     group by candidate.user_id
@@ -267,7 +267,13 @@ begin
     raise exception 'authentication required' using errcode = '42501';
   end if;
 
-  perform private.lock_insight_parent_flow(caller_id);
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'studytrace:owner-mutation:' || caller_id::text,
+      0
+    )
+  );
+  perform private.lock_insight_owner(caller_id);
 
   delete from public.reminder_events where user_id = caller_id;
   delete from public.behavior_events where user_id = caller_id;
@@ -1011,7 +1017,13 @@ begin
       using errcode = '22023';
   end if;
 
-  perform private.lock_insight_parent_flow(caller_id);
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'studytrace:owner-mutation:' || caller_id::text,
+      0
+    )
+  );
+  perform private.lock_insight_owner(caller_id);
 
   select * into selected_session
   from public.study_sessions
