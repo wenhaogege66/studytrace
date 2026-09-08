@@ -150,7 +150,29 @@ pnpm test:e2e
 
 Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端公开首页；不会写入生产数据库。
 
-数据库脚本应在隔离环境或单事务中以 `ON_ERROR_STOP` 执行。脚本自身以 `BEGIN` / `ROLLBACK` 包裹，不保留测试用户或业务数据。
+数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。当前两份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
+
+```bash
+npx supabase start
+npx supabase db reset
+
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/tests/database.test.sql
+
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/tests/account_sync.test.sql
+
+# 保持本地 Supabase 与 Mailpit 运行，验证真实 Auth/OTP/合并链路
+pnpm exec playwright test --config=playwright.local-auth.config.ts
+```
+
+如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。PR4 合入后会新增第三份洞察 SQL 验收脚本，并排在以上两份之后执行。
+
+本地 Supabase 使用公开的开发凭据，部分 Docker 环境会把端口暴露到局域网；仅在可信网络且本机防火墙开启时运行，验收结束后执行 `npx supabase stop`。
+
+Mock E2E 与本地 SQL 通过仍不代表邮箱账号功能可以发布。Hosted Supabase 的匿名登录、邮箱确认、Manual Identity Linking、Turnstile 与重定向域名必须逐项复验；Resend SMTP 配置和 QQ、163、Outlook/Gmail 的真实六位验证码投递均是 Production 发布门禁。
 
 ## 隐私与数据生命周期
 

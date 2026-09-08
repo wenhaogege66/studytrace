@@ -1316,7 +1316,7 @@ begin
     where id = '10000000-0000-4000-8000-000000000001';
     raise exception 'task ownership was mutable';
   exception
-    when insufficient_privilege then null;
+    when insufficient_privilege or check_violation then null;
   end;
 end;
 $$;
@@ -1442,6 +1442,8 @@ $$;
 select public.delete_my_data();
 
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claim.role', '', true);
 
 do $$
 begin
@@ -1532,6 +1534,13 @@ values (
   'running',
   now()
 );
+
+-- Creating the task and running session above is itself recent activity. Age the
+-- private activity ledger after setup so this row represents an anonymous user
+-- who has truly been inactive for more than 30 days while a stale session remains.
+update private.user_activity
+set last_active_at = now() - interval '31 days'
+where user_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 do $$
 declare

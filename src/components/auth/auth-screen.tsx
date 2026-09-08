@@ -901,6 +901,11 @@ export function AuthScreen() {
                     </div>
                   ) : null}
 
+                  {notice ? (
+                    <p className="text-sm text-emerald-700" role="status">
+                      {notice}
+                    </p>
+                  ) : null}
                   {error ? (
                     <p className="text-destructive text-sm" role="alert">
                       {error}
