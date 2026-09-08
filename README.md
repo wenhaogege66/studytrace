@@ -14,9 +14,9 @@
 
 ## v0.1 能力
 
-- 任务：创建、拆分步骤、优先级、预计时长、编辑和删除。
-- 会话：开始、暂停、恢复、刷新恢复计时、完成步骤和手动标记。
-- 本地视觉：MediaPipe Face Landmarker 在 Web Worker 中按需运行；摄像头画面、帧、关键点与人脸特征不上传、不保存。
+- 任务：创建、拆分步骤、优先级、预计时长、编辑和删除；可由千问生成三步可编辑初稿。
+- 会话：开始、暂停、恢复、刷新恢复计时、完成步骤和手动标记；一个大任务可由多段 session 推进，每段都可结束后复盘或跳过复盘。
+- 本地视觉：任务可选“屏幕学习 / 纸笔学习 / 离开设备”观察方式；MediaPipe Face Landmarker 在 Web Worker 中按需运行，摄像头画面、帧、关键点与人脸特征不上传、不保存。
 - 事件：滚动窗口去抖、低打扰提醒、来源标记、确认、修正与硬删除。
 - 复盘：预计/实际时长、事件时间线、完成情况、自我感受和下次调整。
 - 隐私：匿名会话、逐行权限隔离、全部数据清除、30 天匿名数据清理。
@@ -31,6 +31,7 @@ Next.js 16 App Router
 ├── 静态公开首页 /
 └── 动态应用 /app
     ├── React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
+    ├── Qwen Flash ── 仅生成可编辑任务初稿与白名单观察建议
     ├── TanStack Query ── Supabase Data API
     ├── timer reducer/ref ── 刷新恢复
     └── Camera ── 4 FPS frames ── MediaPipe Web Worker
@@ -39,6 +40,7 @@ Next.js 16 App Router
 ```
 
 Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key；`anon` 没有业务表权限，匿名身份建立后使用 `authenticated` 角色，并由 `auth.uid() = user_id` 隔离数据。
+公开匿名体验还设置了数据库硬上限：每个匿名身份最多保留 200 个任务、1,000 段会话、5,000 条观察事件、5,000 条提醒记录和 1,000 条复盘；超出后需先删除旧记录。任务步骤必须是 1～20 个结构化且 ID 唯一的条目。
 
 主要路由：
 
@@ -50,7 +52,13 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 
 ## 本地视觉边界
 
-真实模式默认使用以下规则：
+观察规则是可测试的本地白名单，不是由 AI 即时生成：
+
+- 屏幕学习：可观察持续未在画面、明显转头或低头等客观线索。
+- 纸笔学习：低头是正常动作，因此禁用低头事件。
+- 离开设备：适用于跑步、户外等任务，不请求摄像头，仅使用步骤、计时和复盘。
+
+开启人脸观察时使用以下规则：
 
 - 约 3 秒中性姿态校准，约 4 FPS 抽帧。
 - 连续 5 秒无人脸，开始「未在画面」事件。
@@ -62,8 +70,8 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 
 ## 数据模型与安全
 
-- `tasks`：任务、步骤 JSON、优先级、预计时长和状态。
-- `study_sessions`：计时状态、累计时长、摄像头与提醒状态。
+- `tasks`：任务、步骤 JSON、优先级、预计时长、状态和用户确认的观察方式。
+- `study_sessions`：计时状态、累计时长、摄像头与提醒状态，并快照开始当时的观察方式。
 - `behavior_events`：类型、方向、来源、起止时间和用户修正。
 - `reminder_events`：提醒展示与响应。
 - `reviews`：完成状态、自评、未完成原因和下次调整。
@@ -74,6 +82,11 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 - 双匿名用户 RLS 隔离与越权读取失败。
 - `user_id` 所有权不可篡改。
 - 同一用户最多一个运行或暂停会话。
+- 已结束会话不可被延迟写入“复活”；取消本次学习会释放活动槽，但任务和步骤进度继续保留。
+- 暂停、恢复、摄像头状态和计时检查点使用数据库原子操作；旧标签与迟到请求不能让状态或累计时长倒退。
+- 事件起止时间不会越过所属会话的终态时间，终态后仍可确认、修正或删除事件。
+- 任务步骤结构、每用户业务记录容量与 AI 调用总量均有数据库硬限制。
+- 活动 session 存在时锁定任务观察方式，结束后下一段 session 才读取新策略快照。
 - 任务关联记录级联删除。
 - `delete_my_data()` 只清除调用者自己的全部业务记录。
 - `anon` 无业务表权限，`authenticated` 仅拥有必要 CRUD/RPC 权限。
@@ -96,14 +109,27 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
 ```
 
+如需启用 AI 任务初稿，再填写以下仅服务端可见的变量：
+
+```dotenv
+QWEN_API_KEY=your_server_only_key
+QWEN_BASE_URL=https://your-workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3.7-flash-2026-07-15
+```
+
+AI 路由会先校验当前 Supabase 匿名会话，服务端重新验证三个步骤和观察模式；千问不会收到摄像头画面、视觉关键点或人脸特征。
+服务端同时限制每个匿名身份 10 分钟 8 次、全站每日 200 次（UTC），入口仍由 Turnstile 抑制批量匿名身份。百炼新人免费额度并非永久免费，生产环境还应在控制台开启“免费额度用完即停”。
+
 不要把 legacy secret、service role key、数据库密码或 Turnstile secret 写入 `NEXT_PUBLIC_*` 变量。
 
 Supabase 端需要：
 
-1. 应用 `supabase/migrations/20260803090508_initial_schema.sql`。
+1. 先按时间顺序应用常规迁移，但暂不应用
+   `20260907153524_revoke_direct_study_session_writes.sql`。
 2. 在 Auth 设置中开启匿名身份。
 3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
 4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
+5. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
 
 ## 测试
 
@@ -119,7 +145,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端公开首页；不会写入生产数据库。
+Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端公开首页；不会写入生产数据库。
 
 数据库脚本应在隔离环境或单事务中以 `ON_ERROR_STOP` 执行。脚本自身以 `BEGIN` / `ROLLBACK` 包裹，不保留测试用户或业务数据。
 
@@ -134,7 +160,7 @@ Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起�
 ## 路线图
 
 - v0.1：完整学习闭环、本地视觉事件、匿名安全数据层与可审计交付链。
-- v0.2：更多手动观察维度、复盘趋势和可解释校准。
+- v0.2：增加任务的会话历史入口；为用户明确选择的“镜头内运动”按需加载 MediaPipe Pose Landmarker，先做身体入镜与运动位移等低层线索，再以实验模式探索动作计次。
 - v0.3：在明确同意前提下探索数据导出与跨设备恢复，不改变本地视觉原则。
 
 ## English summary

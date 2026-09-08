@@ -32,6 +32,19 @@ export function elapsedSeconds(state: TimerState, nowMs: number) {
   return Math.floor(elapsedMs(state, nowMs) / 1000)
 }
 
+export function createRunningCheckpoint(state: TimerState, nowMs: number) {
+  if (state.mode !== "running") return null
+
+  const totalMs = elapsedMs(state, nowMs)
+  const accumulatedSeconds = Math.floor(totalMs / 1_000)
+  const remainderMs = totalMs - accumulatedSeconds * 1_000
+
+  return {
+    accumulatedSeconds,
+    resumedAt: new Date(nowMs - remainderMs).toISOString(),
+  }
+}
+
 export function createTimerState(
   session: StudySession,
   nowMs = Date.now(),

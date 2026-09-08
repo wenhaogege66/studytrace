@@ -65,7 +65,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       (_event, session) => {
         if (!active) return
         setUser(session?.user ?? null)
-        if (session?.user) setStatus("ready")
+        setError(null)
+        setStatus(session?.user ? "ready" : "needs_gate")
       },
     )
 

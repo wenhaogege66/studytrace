@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  areTaskStepsComplete,
+  canStartTask,
+  canStartTaskNow,
   formatDuration,
   mapTask,
   parseTaskSteps,
   stepsToJson,
+  taskDisplayStatus,
+  taskStatusForOutcome,
 } from "@/lib/domain"
 import type { Tables } from "@/types/database"
 
@@ -32,6 +37,7 @@ describe("domain data conversions", () => {
       steps: [{ id: "step-1", title: "开始", completed: false }],
       priority: "high",
       estimated_minutes: 25,
+      observation_profile: "study_paper_v1",
       status: "planned",
       completed_at: null,
       created_at: "2026-08-03T00:00:00Z",
@@ -39,6 +45,7 @@ describe("domain data conversions", () => {
     }
     expect(mapTask(row)).toMatchObject({
       priority: "high",
+      observation_profile: "study_paper_v1",
       status: "planned",
       steps: [{ title: "开始" }],
     })
@@ -48,5 +55,59 @@ describe("domain data conversions", () => {
     expect(formatDuration(9)).toBe("00:09")
     expect(formatDuration(65)).toBe("01:05")
     expect(formatDuration(3_665)).toBe("01:01:05")
+  })
+
+  it("keeps task lifecycle independent from optional review state", () => {
+    expect(taskStatusForOutcome("completed")).toBe("completed")
+    expect(taskStatusForOutcome("partially_completed")).toBe("in_progress")
+    expect(taskStatusForOutcome("not_completed")).toBe("in_progress")
+    expect(canStartTask("planned")).toBe(true)
+    expect(canStartTask("in_progress")).toBe(true)
+    expect(canStartTask("completed")).toBe(false)
+    expect(canStartTask("archived")).toBe(false)
+  })
+
+  it("only treats a non-empty list of completed steps as task completion", () => {
+    expect(areTaskStepsComplete([])).toBe(false)
+    expect(
+      areTaskStepsComplete([
+        { id: "one", title: "第一步", completed: true },
+        { id: "two", title: "第二步", completed: false },
+      ]),
+    ).toBe(false)
+    expect(
+      areTaskStepsComplete([
+        { id: "one", title: "第一步", completed: true },
+        { id: "two", title: "第二步", completed: true },
+      ]),
+    ).toBe(true)
+  })
+
+  it("derives ready-to-complete before any resumable session state", () => {
+    const openTask = {
+      status: "in_progress" as const,
+      steps: [{ id: "one", title: "第一步", completed: false }],
+    }
+    const readyTask = {
+      ...openTask,
+      steps: [{ id: "one", title: "第一步", completed: true }],
+    }
+
+    expect(taskDisplayStatus(openTask, "running")).toBe("running")
+    expect(taskDisplayStatus(openTask, "paused")).toBe("paused")
+    expect(taskDisplayStatus(openTask)).toBe("in_progress")
+    expect(taskDisplayStatus(readyTask, "paused")).toBe("ready_to_complete")
+    expect(canStartTaskNow(openTask)).toBe(true)
+    expect(canStartTaskNow(readyTask)).toBe(false)
+  })
+
+  it("keeps terminal database states authoritative in the presentation", () => {
+    const checkedSteps = [{ id: "one", title: "第一步", completed: true }]
+    expect(
+      taskDisplayStatus({ status: "completed", steps: checkedSteps }, null),
+    ).toBe("completed")
+    expect(
+      taskDisplayStatus({ status: "archived", steps: checkedSteps }, null),
+    ).toBe("archived")
   })
 })

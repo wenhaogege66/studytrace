@@ -74,6 +74,8 @@ test("视觉模型加载失败时计时与手动复盘仍可用", async ({ page 
   await expect(
     page.getByText("视觉模型加载失败。计时与手动复盘仍可继续。"),
   ).toBeVisible()
-  await expect(page.getByRole("button", { name: "暂停" })).toBeEnabled()
+  await expect(
+    page.getByRole("button", { name: "暂停", exact: true }),
+  ).toBeEnabled()
   await expect(page.getByRole("button", { name: "手动标记" })).toBeEnabled()
 })

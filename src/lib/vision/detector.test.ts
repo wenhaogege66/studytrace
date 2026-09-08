@@ -61,6 +61,59 @@ describe("vision rolling-window detector", () => {
     expect(state.baselinePitch).toBe(4)
   })
 
+  it("records initial absence without inventing a baseline, then runs a full face calibration window", () => {
+    let state = createDetectorState()
+    state = processObservation(
+      state,
+      observation(0, { facePresent: false, yaw: null, pitch: null }),
+      config,
+    ).state
+    const absent = processObservation(
+      state,
+      observation(5_000, { facePresent: false, yaw: null, pitch: null }),
+      config,
+    )
+
+    expect(absent.state.calibrated).toBe(false)
+    expect(absent.state.calibrationStartedAtMs).toBeNull()
+    expect(absent.state.calibrationYaw).toEqual([])
+    expect(absent.state.calibrationPitch).toEqual([])
+    expect(absent.effects).toContainEqual({
+      type: "event_started",
+      atMs: 0,
+      kind: "face_absent",
+      direction: null,
+    })
+
+    const firstFace = processObservation(
+      absent.state,
+      observation(6_000, { yaw: 6, pitch: 7 }),
+      config,
+    )
+    expect(firstFace.state.calibrated).toBe(false)
+    expect(firstFace.state.calibrationStartedAtMs).toBe(6_000)
+
+    const almostReady = processObservation(
+      firstFace.state,
+      observation(6_999, { yaw: 8, pitch: 9 }),
+      config,
+    )
+    expect(almostReady.state.calibrated).toBe(false)
+
+    const calibrated = processObservation(
+      almostReady.state,
+      observation(7_000, { yaw: 7, pitch: 8 }),
+      config,
+    )
+    expect(calibrated.state.calibrated).toBe(true)
+    expect(calibrated.effects).toContainEqual({
+      type: "calibrated",
+      atMs: 7_000,
+      baselineYaw: 7,
+      baselinePitch: 8,
+    })
+  })
+
   it("starts face-absent only after five continuous seconds and ends after neutral recovery", () => {
     const calibrated = calibrate()
     const result = run(calibrated, [
@@ -93,6 +146,44 @@ describe("vision rolling-window detector", () => {
       atMs: 2_000,
       kind: "head_direction_change",
       direction: "right",
+    })
+  })
+
+  it("ends an active direction immediately and debounces the replacement signal", () => {
+    const result = run(calibrate(), [
+      observation(2_000, { yaw: -30 }),
+      observation(5_000, { yaw: -30 }),
+      observation(5_500, { yaw: 31 }),
+      observation(8_400, { yaw: 31 }),
+      observation(8_500, { yaw: 31 }),
+    ])
+
+    expect(
+      result.effects.filter((effect) => effect.type !== "reminder"),
+    ).toEqual([
+      {
+        type: "event_started",
+        atMs: 2_000,
+        kind: "head_direction_change",
+        direction: "left",
+      },
+      {
+        type: "event_ended",
+        atMs: 5_500,
+        kind: "head_direction_change",
+        direction: "left",
+      },
+      {
+        type: "event_started",
+        atMs: 5_500,
+        kind: "head_direction_change",
+        direction: "right",
+      },
+    ])
+    expect(result.state.active).toMatchObject({
+      kind: "head_direction_change",
+      direction: "right",
+      startedAtMs: 5_500,
     })
   })
 
@@ -132,4 +223,31 @@ describe("vision rolling-window detector", () => {
       result.effects.some((effect) => effect.type === "event_started"),
     ).toBe(false)
   })
+
+  it("ignores head-down posture when the active profile disables pitch", () => {
+    const result = runWithPolicy(
+      calibrate(),
+      [
+        observation(2_000, { pitch: 30 }),
+        observation(5_000, { pitch: 30 }),
+        observation(8_000, { pitch: 30 }),
+      ],
+      { faceAbsent: true, yaw: true, pitch: false },
+    )
+    expect(result.effects).toEqual([])
+  })
 })
+
+function runWithPolicy(
+  state: DetectorState,
+  frames: VisionObservation[],
+  policy: { faceAbsent: boolean; yaw: boolean; pitch: boolean },
+) {
+  const effects = []
+  for (const frame of frames) {
+    const result = processObservation(state, frame, config, policy)
+    state = result.state
+    effects.push(...result.effects)
+  }
+  return { state, effects }
+}

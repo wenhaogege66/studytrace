@@ -1,4 +1,5 @@
 import type { BehaviorEventType, EventDirection } from "@/lib/domain"
+import type { VisionDetectionPolicy } from "@/lib/vision/profiles"
 
 export type VisionObservation = {
   timestampMs: number
@@ -87,6 +88,12 @@ export const EXPERIMENT_THRESHOLDS: VisionThresholds = {
   pitchDegrees: 15,
 }
 
+export const DEFAULT_DETECTION_POLICY: VisionDetectionPolicy = {
+  faceAbsent: true,
+  yaw: true,
+  pitch: true,
+}
+
 export function createDetectorState(): DetectorState {
   return {
     calibrationStartedAtMs: null,
@@ -114,19 +121,21 @@ function classify(
   state: DetectorState,
   observation: VisionObservation,
   config: VisionThresholds,
+  policy: VisionDetectionPolicy,
 ): DetectionSignal | null {
-  if (!observation.facePresent) return { kind: "face_absent", direction: null }
+  if (!observation.facePresent)
+    return policy.faceAbsent ? { kind: "face_absent", direction: null } : null
   if (observation.yaw === null || observation.pitch === null) return null
 
   const yawDelta = observation.yaw - state.baselineYaw
   const pitchDelta = observation.pitch - state.baselinePitch
-  if (Math.abs(yawDelta) >= config.yawDegrees) {
+  if (policy.yaw && Math.abs(yawDelta) >= config.yawDegrees) {
     return {
       kind: "head_direction_change",
       direction: yawDelta > 0 ? "right" : "left",
     }
   }
-  if (pitchDelta >= config.pitchDegrees)
+  if (policy.pitch && pitchDelta >= config.pitchDegrees)
     return { kind: "head_direction_change", direction: "down" }
   return null
 }
@@ -138,10 +147,100 @@ function sameSignal(
   return left?.kind === right?.kind && left?.direction === right?.direction
 }
 
+function applySignal(
+  state: DetectorState,
+  signal: DetectionSignal | null,
+  timestampMs: number,
+  config: VisionThresholds,
+  effects: DetectorEffect[],
+) {
+  if (state.active) {
+    if (sameSignal(state.active, signal)) {
+      state.active.neutralSinceMs = null
+    } else if (signal === null) {
+      state.active.neutralSinceMs ??= timestampMs
+      if (
+        timestampMs - state.active.neutralSinceMs >=
+        config.neutralRecoveryMs
+      ) {
+        effects.push({
+          type: "event_ended",
+          atMs: timestampMs,
+          kind: state.active.kind,
+          direction: state.active.direction,
+        })
+        state.active = null
+        state.candidate = null
+      }
+    } else {
+      effects.push({
+        type: "event_ended",
+        atMs: timestampMs,
+        kind: state.active.kind,
+        direction: state.active.direction,
+      })
+      state.active = null
+      state.candidate = { ...signal, sinceMs: timestampMs }
+    }
+
+    if (
+      state.active &&
+      !state.active.reminded &&
+      timestampMs - state.active.startedAtMs >= config.reminderDelayMs
+    ) {
+      const lastReminder =
+        state.lastReminderAt[state.active.kind] ?? Number.NEGATIVE_INFINITY
+      if (timestampMs - lastReminder >= config.reminderCooldownMs) {
+        state.active.reminded = true
+        state.lastReminderAt[state.active.kind] = timestampMs
+        effects.push({
+          type: "reminder",
+          atMs: timestampMs,
+          kind: state.active.kind,
+        })
+      }
+    }
+    return
+  }
+
+  if (!signal) {
+    state.candidate = null
+    return
+  }
+
+  if (!sameSignal(state.candidate, signal)) {
+    state.candidate = { ...signal, sinceMs: timestampMs }
+    return
+  }
+
+  const requiredDuration =
+    signal.kind === "face_absent" ? config.faceAbsentMs : config.directionHoldMs
+  if (
+    state.candidate &&
+    timestampMs - state.candidate.sinceMs >= requiredDuration
+  ) {
+    state.active = {
+      kind: signal.kind,
+      direction: signal.direction,
+      startedAtMs: state.candidate.sinceMs,
+      neutralSinceMs: null,
+      reminded: false,
+    }
+    effects.push({
+      type: "event_started",
+      atMs: state.candidate.sinceMs,
+      kind: signal.kind,
+      direction: signal.direction,
+    })
+    state.candidate = null
+  }
+}
+
 export function processObservation(
   previous: DetectorState,
   observation: VisionObservation,
   config: VisionThresholds = DEFAULT_THRESHOLDS,
+  policy: VisionDetectionPolicy = DEFAULT_DETECTION_POLICY,
 ): { state: DetectorState; effects: DetectorEffect[] } {
   const state: DetectorState = {
     ...previous,
@@ -154,15 +253,32 @@ export function processObservation(
   const effects: DetectorEffect[] = []
 
   if (!state.calibrated) {
-    state.calibrationStartedAtMs ??= observation.timestampMs
-    if (
+    const hasValidPose =
       observation.facePresent &&
       observation.yaw !== null &&
       observation.pitch !== null
-    ) {
-      state.calibrationYaw.push(observation.yaw)
-      state.calibrationPitch.push(observation.pitch)
+    const preCalibrationSignal =
+      !observation.facePresent && policy.faceAbsent
+        ? { kind: "face_absent" as const, direction: null }
+        : null
+    applySignal(
+      state,
+      preCalibrationSignal,
+      observation.timestampMs,
+      config,
+      effects,
+    )
+
+    if (!hasValidPose) {
+      state.calibrationStartedAtMs = null
+      state.calibrationYaw = []
+      state.calibrationPitch = []
+      return { state, effects }
     }
+
+    state.calibrationStartedAtMs ??= observation.timestampMs
+    state.calibrationYaw.push(observation.yaw as number)
+    state.calibrationPitch.push(observation.pitch as number)
 
     if (
       observation.timestampMs - state.calibrationStartedAtMs >=
@@ -182,83 +298,8 @@ export function processObservation(
     return { state, effects }
   }
 
-  const signal = classify(state, observation, config)
-
-  if (state.active) {
-    if (sameSignal(state.active, signal)) {
-      state.active.neutralSinceMs = null
-    } else if (signal === null) {
-      state.active.neutralSinceMs ??= observation.timestampMs
-      if (
-        observation.timestampMs - state.active.neutralSinceMs >=
-        config.neutralRecoveryMs
-      ) {
-        effects.push({
-          type: "event_ended",
-          atMs: observation.timestampMs,
-          kind: state.active.kind,
-          direction: state.active.direction,
-        })
-        state.active = null
-        state.candidate = null
-      }
-    } else {
-      state.active.neutralSinceMs ??= observation.timestampMs
-    }
-
-    if (
-      state.active &&
-      !state.active.reminded &&
-      observation.timestampMs - state.active.startedAtMs >=
-        config.reminderDelayMs
-    ) {
-      const lastReminder =
-        state.lastReminderAt[state.active.kind] ?? Number.NEGATIVE_INFINITY
-      if (observation.timestampMs - lastReminder >= config.reminderCooldownMs) {
-        state.active.reminded = true
-        state.lastReminderAt[state.active.kind] = observation.timestampMs
-        effects.push({
-          type: "reminder",
-          atMs: observation.timestampMs,
-          kind: state.active.kind,
-        })
-      }
-    }
-
-    return { state, effects }
-  }
-
-  if (!signal) {
-    state.candidate = null
-    return { state, effects }
-  }
-
-  if (!sameSignal(state.candidate, signal)) {
-    state.candidate = { ...signal, sinceMs: observation.timestampMs }
-    return { state, effects }
-  }
-
-  const requiredDuration =
-    signal.kind === "face_absent" ? config.faceAbsentMs : config.directionHoldMs
-  if (
-    state.candidate &&
-    observation.timestampMs - state.candidate.sinceMs >= requiredDuration
-  ) {
-    state.active = {
-      kind: signal.kind,
-      direction: signal.direction,
-      startedAtMs: state.candidate.sinceMs,
-      neutralSinceMs: null,
-      reminded: false,
-    }
-    effects.push({
-      type: "event_started",
-      atMs: state.candidate.sinceMs,
-      kind: signal.kind,
-      direction: signal.direction,
-    })
-    state.candidate = null
-  }
+  const signal = classify(state, observation, config, policy)
+  applySignal(state, signal, observation.timestampMs, config, effects)
 
   return { state, effects }
 }
