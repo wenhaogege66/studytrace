@@ -161,7 +161,53 @@ describe("fact-based insights", () => {
     const suggestion = buildInsightSuggestion(input)
     expect(suggestion.title).toBe("下一阶段可尝试 45 + 8 分钟")
     expect(suggestion.bestTimeBucket?.id).toBe("morning")
+    expect(suggestion.detail).toContain(
+      "早晨 05–11当前平均自评最高（4.5/5，共 4 次复盘）",
+    )
     expect(suggestion.detail).toContain("实验建议")
+  })
+
+  it("does not compare time buckets without two supported, uniquely ranked buckets", () => {
+    const ready = {
+      ...report().readiness,
+      evidence_eligible_segments: 25,
+      evidence_active_days: 12,
+      patterns_ready: true,
+    }
+    const morning = {
+      id: "morning" as const,
+      label: "早晨 05–11",
+      segment_count: 8,
+      actual_seconds: 14_400,
+      reviewed_count: 4,
+      average_rating: 4.5,
+      outcome_count: 4,
+      completion_percent: 75,
+    }
+
+    const onlyOne = buildInsightSuggestion(
+      report({ readiness: ready, time_buckets: [morning] }),
+    )
+    expect(onlyOne.bestTimeBucket).toBeNull()
+    expect(onlyOne.detail).toContain("暂不比较时段")
+    expect(onlyOne.detail).not.toContain("相对更高")
+
+    const tied = buildInsightSuggestion(
+      report({
+        readiness: ready,
+        time_buckets: [
+          morning,
+          {
+            ...morning,
+            id: "evening",
+            label: "晚上 18–23",
+            reviewed_count: 3,
+          },
+        ],
+      }),
+    )
+    expect(tied.bestTimeBucket).toBeNull()
+    expect(tied.detail).toContain("最高自评并列")
   })
 
   it("describes precursors as user-confirmed co-occurrence, not causality", () => {
@@ -226,6 +272,7 @@ describe("fact-based insights", () => {
   })
 
   it("formats short and long durations for scanning", () => {
+    expect(formatEvidenceDuration(0)).toBe("0 分钟")
     expect(formatEvidenceDuration(30)).toBe("不足 1 分钟")
     expect(formatEvidenceDuration(1800)).toBe("30 分钟")
     expect(formatEvidenceDuration(7500)).toBe("2 小时 5 分钟")

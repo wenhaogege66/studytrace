@@ -623,7 +623,11 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                   {completedSteps}/{task.steps.length}
                 </span>
               </div>
-              <Progress value={stepProgress} className="mt-3" />
+              <Progress
+                value={stepProgress}
+                className="mt-3"
+                aria-label="当前任务步骤完成进度"
+              />
             </CardHeader>
             <CardContent className="space-y-2">
               {task.steps.map((step: TaskStep) => (
@@ -785,7 +789,11 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                 {completedSteps}/{task.steps.length}
               </span>
             </div>
-            <Progress value={stepProgress} className="mt-3" />
+            <Progress
+              value={stepProgress}
+              className="mt-3"
+              aria-label="完成确认中的任务步骤进度"
+            />
             <p className="mt-3 text-sm leading-6 text-slate-600">
               全部步骤已完成，结束后任务会进入“已完成”，不能再次直接开始。
             </p>

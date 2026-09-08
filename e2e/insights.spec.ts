@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test"
 
 import { installMockSupabase } from "./mock-supabase"
 
+test.describe.configure({ mode: "serial" })
+
 test("长期洞察对空样本说明收集门槛", async ({ page }) => {
   await installMockSupabase(page)
   await page.goto("/app/insights")
@@ -96,6 +98,12 @@ test("长期洞察在样本不足时展示事实与收集缺口", async ({ page 
   await expect(page.getByText(/14 个有效投入片段、7 个活跃日/)).toBeVisible()
   await expect(page.getByText("形成建议所需样本")).toBeVisible()
   await expect(
+    page.getByText(/前置信号共现收集进度：已主动标记 2\/10 次/),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("progressbar", { name: "形成建议所需样本" }),
+  ).toHaveAttribute("aria-valuenow", "30")
+  await expect(
     page.getByRole("heading", { name: /下一阶段可尝试/ }),
   ).toHaveCount(0)
 })
@@ -180,6 +188,8 @@ test("长期洞察展示可追溯的完成、观察与提醒事实", async ({ pa
   await expect(page.getByText("确认事件率")).toBeVisible()
   await expect(page.getByText("轻提醒后的反馈")).toBeVisible()
   await expect(page.getByText(/10 次主动标记中/)).toBeVisible()
+  await expect(page.getByText("暂不比较时段", { exact: false })).toBeVisible()
+  await expect(page.getByText("相对更高", { exact: false })).toHaveCount(0)
 
   await page.getByRole("button", { name: "近 7 天" }).click()
   await expect(page.getByText("当前 7 天窗口")).toBeVisible()
@@ -191,4 +201,46 @@ test("事实记录被截断时明确提示且不生成个性化建议", async ({
 
   await expect(page.getByText("这份汇总包含不完整的历史区间")).toBeVisible()
   await expect(page.getByText("部分历史未被记录，暂不生成建议")).toBeVisible()
+})
+
+test("移动端洞察与任务主操作保持紧凑且可触达", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await installMockSupabase(page)
+  await page.goto("/app/insights")
+
+  await expect(page.getByRole("main")).toBeVisible()
+  await expect(
+    page.getByLabel("本期摘要").getByText("0 分钟", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("progressbar", { name: "形成建议所需样本" }),
+  ).toHaveAttribute("aria-valuenow", "0")
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("本期摘要")
+        .evaluate(
+          (element) =>
+            getComputedStyle(element).gridTemplateColumns.split(" ").length,
+        ),
+    )
+    .toBe(2)
+
+  for (const label of ["近 7 天", "近 30 天"]) {
+    const box = await page.getByRole("button", { name: label }).boundingBox()
+    expect(box?.height).toBeGreaterThanOrEqual(44)
+  }
+
+  await page.goto("/app")
+  await page.getByRole("button", { name: "新建任务" }).first().click()
+  await page.getByLabel("任务标题").fill("验证移动端任务操作")
+  await page
+    .getByRole("textbox", { name: "步骤 1", exact: true })
+    .fill("完成一次触控验收")
+  await page.getByRole("button", { name: "创建任务" }).click()
+
+  for (const label of ["开始学习", "待完成 1", "已完成 0", "已归档 0"]) {
+    const box = await page.getByRole("button", { name: label }).boundingBox()
+    expect(box?.height).toBeGreaterThanOrEqual(44)
+  }
 })

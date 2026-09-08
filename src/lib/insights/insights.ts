@@ -114,19 +114,23 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 function bestSupportedTimeBucket(report: InsightsReport) {
-  return (
-    report.time_buckets
-      .filter(
-        (bucket) =>
-          bucket.reviewed_count >= 2 && bucket.average_rating !== null,
-      )
-      .sort((left, right) => {
-        const ratingDifference =
-          (right.average_rating ?? 0) - (left.average_rating ?? 0)
-        if (ratingDifference !== 0) return ratingDifference
-        return right.actual_seconds - left.actual_seconds
-      })[0] ?? null
+  const supported = report.time_buckets
+    .filter(
+      (bucket) => bucket.reviewed_count >= 2 && bucket.average_rating !== null,
+    )
+    .sort(
+      (left, right) => (right.average_rating ?? 0) - (left.average_rating ?? 0),
+    )
+
+  if (supported.length < 2) return null
+  const [best, runnerUp] = supported
+  if (
+    !best ||
+    !runnerUp ||
+    (best.average_rating ?? 0) <= (runnerUp.average_rating ?? 0)
   )
+    return null
+  return best
 }
 
 export function buildInsightSuggestion(
@@ -191,8 +195,8 @@ export function buildInsightSuggestion(
   const restMinutes = focusMinutes <= 30 ? 5 : focusMinutes <= 45 ? 8 : 10
   const bestTimeBucket = bestSupportedTimeBucket(report)
   const timeDetail = bestTimeBucket
-    ? `在有至少 2 次复盘的时段里，${bestTimeBucket.label}的平均自评相对更高。`
-    : "各时段的复盘样本还不够，暂不比较哪个时段更适合。"
+    ? `在至少有 2 次复盘的时段中，${bestTimeBucket.label}当前平均自评最高（${bestTimeBucket.average_rating}/5，共 ${bestTimeBucket.reviewed_count} 次复盘）。`
+    : "达到 2 次复盘的时段还不足两个，或当前最高自评并列，暂不比较时段。"
 
   return {
     ready: true,
@@ -208,6 +212,7 @@ export function buildInsightSuggestion(
 
 export function formatEvidenceDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, Math.floor(totalSeconds))
+  if (safeSeconds === 0) return "0 分钟"
   if (safeSeconds < 60) return "不足 1 分钟"
   const totalMinutes = Math.floor(safeSeconds / 60)
   if (totalMinutes < 60) return `${totalMinutes} 分钟`

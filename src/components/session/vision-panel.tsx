@@ -706,7 +706,10 @@ export function VisionPanel({
                       : `${Math.round(calibrationProgress)}%`}
                   </span>
                 </div>
-                <Progress value={calibrationProgress} />
+                <Progress
+                  value={calibrationProgress}
+                  aria-label="中性姿态校准进度"
+                />
               </div>
             ) : null}
 

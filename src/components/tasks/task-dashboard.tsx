@@ -633,7 +633,11 @@ function TaskRow({
               </span>
               <span>{Math.round(progress)}%</span>
             </div>
-            <Progress value={progress} className="mt-2 h-1.5" />
+            <Progress
+              value={progress}
+              className="mt-2 h-1.5"
+              aria-label={`任务“${task.title}”步骤完成进度`}
+            />
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
               <Clock3 className="size-3.5" /> 预计 {task.estimated_minutes} 分钟
             </p>

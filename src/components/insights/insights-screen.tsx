@@ -49,7 +49,13 @@ const reminderResponseLabels = [
 
 function Loading() {
   return (
-    <div className="space-y-7" aria-label="正在读取长期记录">
+    <div
+      className="space-y-7"
+      role="status"
+      aria-label="正在读取长期记录"
+      aria-live="polite"
+      aria-busy="true"
+    >
       <Skeleton className="h-16 w-96 max-w-full" />
       <Skeleton className="h-28 w-full rounded-2xl" />
       <div className="grid gap-5 lg:grid-cols-2">
@@ -72,7 +78,7 @@ function Metric({
   note: string
 }) {
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5">
+    <div className="min-w-0 bg-white/90 px-4 py-4 sm:px-5">
       <div className="flex items-center gap-2 text-sm text-slate-500">
         <Icon className="size-4 text-indigo-600" />
         {label}
@@ -304,7 +310,7 @@ export function InsightsScreen() {
       ) : (
         <>
           <section
-            className="grid overflow-hidden rounded-2xl bg-white/90 shadow-sm shadow-indigo-950/5 sm:grid-cols-2 lg:grid-cols-4"
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-indigo-100 shadow-sm shadow-indigo-950/5 lg:grid-cols-4"
             aria-label="本期摘要"
           >
             <Metric
@@ -375,12 +381,22 @@ export function InsightsScreen() {
                       <span>形成建议所需样本</span>
                       <span>{suggestion.progressPercent}%</span>
                     </div>
-                    <Progress value={suggestion.progressPercent} />
+                    <Progress
+                      value={suggestion.progressPercent}
+                      aria-label="形成建议所需样本"
+                    />
                   </div>
                 ) : null}
                 {suggestion.precursorStatement ? (
                   <p className="mt-4 rounded-xl bg-white/60 px-4 py-3 text-sm leading-6 text-emerald-950">
                     {suggestion.precursorStatement}
+                  </p>
+                ) : report.data_coverage.recommendation_evidence_complete ? (
+                  <p className="mt-4 rounded-xl bg-white/60 px-4 py-3 text-sm leading-6 text-emerald-950">
+                    前置信号共现收集进度：已主动标记{" "}
+                    {report.precursor.manual_marker_count}/
+                    {report.readiness.required_manual_markers}{" "}
+                    次。达到门槛后也只呈现个人共现比例，不作因果、能力或医学判断。
                   </p>
                 ) : null}
               </div>
