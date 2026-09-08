@@ -7,17 +7,6 @@ import {
 } from "./insights"
 
 type RpcError = { message: string; code?: string } | null
-type RpcResult = PromiseLike<{ data: unknown; error: RpcError }>
-type UntypedRpc = (
-  functionName: string,
-  parameters?: Record<string, unknown>,
-) => RpcResult
-
-function rpc(functionName: string, parameters?: Record<string, unknown>) {
-  const client = getSupabase()
-  const call = client.rpc.bind(client) as unknown as UntypedRpc
-  return call(functionName, parameters)
-}
 
 function fail(message: string, error: Exclude<RpcError, null>): never {
   const normalized = error.message.toLocaleLowerCase()
@@ -37,7 +26,9 @@ function fail(message: string, error: Exclude<RpcError, null>): never {
 export async function getMyInsights(
   days: InsightWindow,
 ): Promise<InsightsReport> {
-  const { data, error } = await rpc("get_my_insights", { p_days: days })
+  const { data, error } = await getSupabase().rpc("get_my_insights", {
+    p_days: days,
+  })
   if (error) fail("读取长期记录失败", error)
 
   try {
@@ -51,10 +42,13 @@ export async function updateMyInsightsPreferences(input: {
   enabled: boolean
   timezone: string
 }) {
-  const { data, error } = await rpc("update_my_insights_preferences", {
-    p_enabled: input.enabled,
-    p_timezone: input.timezone,
-  })
+  const { data, error } = await getSupabase().rpc(
+    "update_my_insights_preferences",
+    {
+      p_enabled: input.enabled,
+      p_timezone: input.timezone,
+    },
+  )
   if (error) fail("保存洞察设置失败", error)
   return data as { enabled: boolean; timezone: string }
 }

@@ -73,6 +73,59 @@ export type Database = {
           },
         ]
       }
+      observation_runs: {
+        Row: {
+          created_at: string
+          detector_version: string
+          ended_at: string | null
+          experiment_mode: boolean
+          id: string
+          observation_profile: string
+          origin: string
+          policy_snapshot: Json
+          session_id: string
+          started_at: string
+          threshold_snapshot: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detector_version: string
+          ended_at?: string | null
+          experiment_mode?: boolean
+          id?: string
+          observation_profile: string
+          origin?: string
+          policy_snapshot?: Json
+          session_id: string
+          started_at: string
+          threshold_snapshot?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detector_version?: string
+          ended_at?: string | null
+          experiment_mode?: boolean
+          id?: string
+          observation_profile?: string
+          origin?: string
+          policy_snapshot?: Json
+          session_id?: string
+          started_at?: string
+          threshold_snapshot?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "observation_runs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "study_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reminder_events: {
         Row: {
           behavior_event_id: string | null
@@ -165,6 +218,44 @@ export type Database = {
           },
         ]
       }
+      session_segments: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          id: string
+          origin: string
+          session_id: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          origin?: string
+          session_id: string
+          started_at: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          origin?: string
+          session_id?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_segments_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "study_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       study_sessions: {
         Row: {
           plan_revision_id: string | null
@@ -238,6 +329,100 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "study_sessions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_lifecycle_events: {
+        Row: {
+          created_at: string
+          event_type: string
+          from_status: string | null
+          id: string
+          metadata: Json
+          occurred_at: string
+          task_id: string
+          to_status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          from_status?: string | null
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          task_id: string
+          to_status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          from_status?: string | null
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          task_id?: string
+          to_status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_lifecycle_events_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_step_events: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          next_completed: boolean | null
+          next_title: string | null
+          occurred_at: string
+          previous_completed: boolean | null
+          previous_title: string | null
+          step_id: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          next_completed?: boolean | null
+          next_title?: string | null
+          occurred_at?: string
+          previous_completed?: boolean | null
+          previous_title?: string | null
+          step_id: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          next_completed?: boolean | null
+          next_title?: string | null
+          occurred_at?: string
+          previous_completed?: boolean | null
+          previous_title?: string | null
+          step_id?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_step_events_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
@@ -354,6 +539,8 @@ export type Database = {
           direction_hold_seconds: number
           experiment_mode: boolean
           face_absent_seconds: number
+          insights_enabled: boolean
+          insights_timezone: string
           neutral_recovery_seconds: number
           pitch_threshold_degrees: number
           privacy_mode: string
@@ -374,6 +561,8 @@ export type Database = {
           direction_hold_seconds?: number
           experiment_mode?: boolean
           face_absent_seconds?: number
+          insights_enabled?: boolean
+          insights_timezone?: string
           neutral_recovery_seconds?: number
           pitch_threshold_degrees?: number
           privacy_mode?: string
@@ -394,6 +583,8 @@ export type Database = {
           direction_hold_seconds?: number
           experiment_mode?: boolean
           face_absent_seconds?: number
+          insights_enabled?: boolean
+          insights_timezone?: string
           neutral_recovery_seconds?: number
           pitch_threshold_degrees?: number
           privacy_mode?: string
@@ -555,6 +746,7 @@ export type Database = {
         }
       }
       get_my_account_transfer_summary: { Args: never; Returns: Json }
+      get_my_insights: { Args: { p_days?: number }; Returns: Json }
       pause_study_session: {
         Args: {
           p_accumulated_seconds: number
@@ -649,6 +841,25 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      respond_to_reminder: {
+        Args: { p_reminder_id: string; p_response: string }
+        Returns: {
+          behavior_event_id: string | null
+          created_at: string
+          id: string
+          responded_at: string | null
+          response: string
+          session_id: string
+          shown_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "reminder_events"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -773,6 +984,10 @@ export type Database = {
         }
       }
       touch_my_activity: { Args: never; Returns: string }
+      update_my_insights_preferences: {
+        Args: { p_enabled: boolean; p_timezone: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

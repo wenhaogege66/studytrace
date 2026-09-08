@@ -27,15 +27,6 @@ type DataError = { code?: string; message: string }
 export type ReminderResponse =
   "dismissed" | "back_to_task" | "normal_activity" | "not_needed" | "later"
 
-type UntypedRpcResult = PromiseLike<{
-  data: unknown
-  error: DataError | null
-}>
-type UntypedRpc = (
-  functionName: string,
-  parameters?: Record<string, unknown>,
-) => UntypedRpcResult
-
 function friendlyDataError(error: DataError) {
   if (
     error.message.includes("Task steps are complete") ||
@@ -555,21 +546,12 @@ export async function respondToReminder(
   reminderId: string,
   response: ReminderResponse,
 ) {
-  const client = getSupabase()
-  const rpc = client.rpc.bind(client) as unknown as UntypedRpc
-  const { data, error } = await rpc("respond_to_reminder", {
+  const { data, error } = await getSupabase().rpc("respond_to_reminder", {
     p_reminder_id: reminderId,
     p_response: response,
   })
   if (error) fail("保存提醒反馈失败", error)
-  if (
-    !data ||
-    typeof data !== "object" ||
-    !("id" in data) ||
-    !("user_id" in data) ||
-    data.id !== reminderId ||
-    data.user_id !== userId
-  )
+  if (!data || data.id !== reminderId || data.user_id !== userId)
     throw new Error("保存提醒反馈失败：返回数据异常")
   return data
 }
