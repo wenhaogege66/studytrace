@@ -16,6 +16,21 @@ type MockSupabaseOptions = {
   accountEmail?: string
   existingAccountEmails?: string[]
   expectedOtp?: string
+  gatewayTimeoutAfterMerge?: boolean
+  invalidFirstMergeShape?: boolean
+  loseFirstMergeResponse?: boolean
+  loseFirstPrepareResponse?: boolean
+  rejectFirstPrepareDefinitively?: boolean
+  failSummaryAfterMerge?: boolean
+  rejectFirstMergeForCapacity?: boolean
+  timeoutBeforeMergeThenCapacityRollback?: boolean
+  mergeResponseDelayMs?: number
+  verifyOtpDelayMs?: number
+  cancelMergeDelayMs?: number
+  seedExpiredMergeRecovery?: {
+    email: string
+    mergeSecret: string
+  }
   seedRunningStudySession?: boolean
   accountSummary?: Partial<{
     tasks: number
@@ -30,6 +45,8 @@ export type MockSupabaseHandle = {
   permanentUserId: string
   authEvents: string[]
   currentUser: () => Row | null
+  clearPersistentSession: (page: Page) => Promise<void>
+  switchPersistentSessionToTarget: (page: Page) => Promise<void>
   studySessions: () => Row[]
 }
 
@@ -85,30 +102,49 @@ function authUser({
   }
 }
 
-function fakeAccessToken(user: Row) {
+function fakeAccessToken(
+  user: Row,
+  sessionId: string,
+  expiresInSeconds = 3_600,
+) {
   return [
     encodeJwtPart({ alg: "HS256", typ: "JWT" }),
     encodeJwtPart({
       aud: "authenticated",
-      exp: Math.floor(Date.now() / 1_000) + 3_600,
+      exp: Math.floor(Date.now() / 1_000) + expiresInSeconds,
       role: "authenticated",
       sub: user.id,
+      session_id: sessionId,
       is_anonymous: user.is_anonymous,
       email: user.email,
     }),
-    "e2e-signature",
+    "e2e-signature0",
   ].join(".")
+}
+
+function userClaimsFromAuthorization(value: string | undefined) {
+  const token = value?.replace(/^Bearer\s+/i, "")
+  const payload = token?.split(".")[1]
+  if (!payload) return null
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Row
+  } catch {
+    return null
+  }
 }
 
 function sessionPayload(
   user: Row = authUser({ id: userId, isAnonymous: true }),
+  sessionId = crypto.randomUUID(),
+  expiresInSeconds = 3_600,
+  refreshToken = `e2e-refresh-${String(user.id)}-${sessionId}`,
 ) {
   return {
-    access_token: fakeAccessToken(user),
+    access_token: fakeAccessToken(user, sessionId, expiresInSeconds),
     token_type: "bearer",
-    expires_in: 3_600,
-    expires_at: Math.floor(Date.now() / 1_000) + 3_600,
-    refresh_token: `e2e-refresh-${String(user.id)}`,
+    expires_in: expiresInSeconds,
+    expires_at: Math.floor(Date.now() / 1_000) + expiresInSeconds,
+    refresh_token: refreshToken,
     user,
   }
 }
@@ -218,16 +254,64 @@ export async function installMockSupabase(
       : authUser({ id: userId, isAnonymous: true })
   let currentUser: Row | null =
     options.seedSession === false ? null : initialUser
+  const users = new Map<string, Row>()
+  users.set(String(initialUser.id), initialUser)
   let pendingUpgradeEmail: string | null = null
   let pendingOtpEmail: string | null = null
   let preparedMerge: { token: string; email: string } | null = null
+  let consumedMerge: {
+    token: string
+    targetUserId: string
+    targetSessionId: string
+    result: Row
+  } | null = null
+  let preparedDeletionToken: string | null = null
+  let mergeResponseLost = false
+  let prepareResponseLost = false
+  let prepareRejected = false
+  let capacityMergeRejected = false
   const authEvents: string[] = []
   const knownAccounts = new Map<string, string>()
   for (const email of options.existingAccountEmails ?? []) {
-    knownAccounts.set(email.trim().toLocaleLowerCase("en-US"), permanentUserId)
+    const normalized = email.trim().toLocaleLowerCase("en-US")
+    knownAccounts.set(normalized, permanentUserId)
+    users.set(
+      permanentUserId,
+      authUser({
+        id: permanentUserId,
+        email: normalized,
+        isAnonymous: false,
+      }),
+    )
   }
   if (options.accountKind === "permanent") {
     knownAccounts.set(accountEmail, permanentUserId)
+    users.set(permanentUserId, initialUser)
+  }
+  if (options.seedExpiredMergeRecovery) {
+    const recoveryEmail = options.seedExpiredMergeRecovery.email
+      .trim()
+      .toLocaleLowerCase("en-US")
+    knownAccounts.set(recoveryEmail, permanentUserId)
+    users.set(
+      permanentUserId,
+      authUser({
+        id: permanentUserId,
+        email: recoveryEmail,
+        isAnonymous: false,
+      }),
+    )
+    preparedMerge = {
+      token: options.seedExpiredMergeRecovery.mergeSecret,
+      email: recoveryEmail,
+    }
+  }
+
+  const claimsForRequest = (request: ReturnType<Route["request"]>) =>
+    userClaimsFromAuthorization(request.headers()["authorization"])
+  const userForRequest = (request: ReturnType<Route["request"]>) => {
+    const claims = claimsForRequest(request)
+    return claims?.sub ? (users.get(String(claims.sub)) ?? null) : null
   }
 
   const settings: Row[] =
@@ -278,7 +362,7 @@ export async function installMockSupabase(
   }
 
   if (currentUser) {
-    await page.addInitScript(
+    await page.context().addInitScript(
       ({ markerKey, storageKey, session }) => {
         if (window.localStorage.getItem(markerKey)) return
         window.localStorage.setItem(markerKey, "true")
@@ -292,7 +376,61 @@ export async function installMockSupabase(
     )
   }
 
-  await page.route("http://127.0.0.1:54321/**", async (route) => {
+  if (options.seedExpiredMergeRecovery) {
+    const recoveryEmail = options.seedExpiredMergeRecovery.email
+      .trim()
+      .toLocaleLowerCase("en-US")
+    const targetUser = users.get(permanentUserId)
+    if (!targetUser) throw new Error("Seeded target account is missing")
+    const targetSessionId = crypto.randomUUID()
+    const expiredTargetSession = sessionPayload(
+      targetUser,
+      targetSessionId,
+      -60,
+    )
+    await page.context().addInitScript(
+      ({ flow, recovery, marker }) => {
+        sessionStorage.setItem(
+          "studytrace.pending-account-flow.v1",
+          JSON.stringify(flow),
+        )
+        sessionStorage.setItem(
+          "studytrace.pending-account-merge-recovery.v1",
+          JSON.stringify(recovery),
+        )
+        localStorage.setItem(
+          "studytrace.account-merge-handoff.v1",
+          JSON.stringify(marker),
+        )
+      },
+      {
+        flow: {
+          kind: "merge",
+          email: recoveryEmail,
+          sentAt: Date.now(),
+          sourceUserId: userId,
+          mergeSecret: options.seedExpiredMergeRecovery.mergeSecret,
+          mergeRecoveryRequired: true,
+        },
+        recovery: {
+          sourceUserId: userId,
+          targetUserId: permanentUserId,
+          email: recoveryEmail,
+          accessToken: expiredTargetSession.access_token,
+          refreshToken: expiredTargetSession.refresh_token,
+          capturedAt: Date.now(),
+        },
+        marker: {
+          sourceUserId: userId,
+          targetUserId: permanentUserId,
+          email: recoveryEmail,
+          capturedAt: Date.now(),
+        },
+      },
+    )
+  }
+
+  await page.context().route("http://127.0.0.1:54321/**", async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
@@ -311,24 +449,62 @@ export async function installMockSupabase(
     }
 
     if (url.pathname === "/auth/v1/user" && method === "GET") {
-      if (!currentUser) {
+      const claims = userClaimsFromAuthorization(
+        request.headers()["authorization"],
+      )
+      const requestedUser = claims?.sub
+        ? (users.get(String(claims.sub)) ?? null)
+        : null
+      if (!requestedUser) {
         await fulfillJson(
           route,
           {
-            code: "session_not_found",
-            error_code: "session_not_found",
-            message: "Auth session missing",
+            code: "user_not_found",
+            error_code: "user_not_found",
+            message: "User from sub claim in JWT does not exist",
           },
-          401,
+          403,
         )
         return
       }
-      await fulfillJson(route, currentUser)
+      await fulfillJson(route, requestedUser)
+      return
+    }
+
+    if (
+      url.pathname === "/auth/v1/token" &&
+      url.searchParams.get("grant_type") === "refresh_token"
+    ) {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const refreshToken = String(body.refresh_token ?? "")
+      const targetEntry = [...users.entries()].find(([id]) =>
+        refreshToken.startsWith(`e2e-refresh-${id}-`),
+      )
+      if (!targetEntry) {
+        await fulfillJson(
+          route,
+          {
+            code: "refresh_token_not_found",
+            error_code: "refresh_token_not_found",
+            message: "Invalid Refresh Token: Refresh Token Not Found",
+          },
+          400,
+        )
+        return
+      }
+      const [targetId, targetUser] = targetEntry
+      const sessionId = refreshToken.slice(`e2e-refresh-${targetId}-`.length)
+      authEvents.push("refresh-target-session")
+      await fulfillJson(
+        route,
+        sessionPayload(targetUser, sessionId, 3_600, `${refreshToken}-rotated`),
+      )
       return
     }
 
     if (url.pathname === "/auth/v1/signup" && method === "POST") {
       currentUser = authUser({ id: userId, isAnonymous: true })
+      users.set(userId, currentUser)
       authEvents.push("anonymous-sign-in")
       await fulfillJson(route, sessionPayload(currentUser))
       return
@@ -341,7 +517,8 @@ export async function installMockSupabase(
         .toLocaleLowerCase("en-US")
       const existingId = knownAccounts.get(email)
       authEvents.push("request-email-upgrade")
-      if (!currentUser) {
+      const actor = userForRequest(request)
+      if (!actor) {
         await fulfillJson(
           route,
           {
@@ -353,7 +530,7 @@ export async function installMockSupabase(
         )
         return
       }
-      if (existingId && existingId !== currentUser.id) {
+      if (existingId && existingId !== actor.id) {
         await fulfillJson(
           route,
           {
@@ -368,8 +545,10 @@ export async function installMockSupabase(
       }
 
       pendingUpgradeEmail = email
-      currentUser = { ...currentUser, email, updated_at: now() }
-      await fulfillJson(route, { user: currentUser })
+      const updatedActor = { ...actor, email, updated_at: now() }
+      users.set(String(actor.id), updatedActor)
+      currentUser = updatedActor
+      await fulfillJson(route, { user: updatedActor })
       return
     }
 
@@ -410,6 +589,11 @@ export async function installMockSupabase(
       const token = String(body.token ?? "")
       const verificationType = String(body.type ?? "")
       authEvents.push("verify-otp")
+      if (options.verifyOtpDelayMs) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.verifyOtpDelayMs),
+        )
+      }
       if (token !== (options.expectedOtp ?? "123456")) {
         await fulfillJson(
           route,
@@ -424,11 +608,8 @@ export async function installMockSupabase(
       }
 
       if (verificationType === "email_change") {
-        if (
-          !currentUser ||
-          !pendingUpgradeEmail ||
-          pendingUpgradeEmail !== email
-        ) {
+        const actor = userForRequest(request) ?? currentUser
+        if (!actor || !pendingUpgradeEmail || pendingUpgradeEmail !== email) {
           await fulfillJson(
             route,
             {
@@ -440,12 +621,14 @@ export async function installMockSupabase(
           )
           return
         }
-        currentUser = authUser({
-          id: String(currentUser.id),
+        const upgradedUser = authUser({
+          id: String(actor.id),
           email,
           isAnonymous: false,
         })
-        knownAccounts.set(email, String(currentUser.id))
+        users.set(String(actor.id), upgradedUser)
+        currentUser = upgradedUser
+        knownAccounts.set(email, String(actor.id))
         pendingUpgradeEmail = null
       } else {
         const targetUserId = knownAccounts.get(email)
@@ -461,11 +644,10 @@ export async function installMockSupabase(
           )
           return
         }
-        currentUser = authUser({
-          id: targetUserId,
-          email,
-          isAnonymous: false,
-        })
+        currentUser =
+          users.get(targetUserId) ??
+          authUser({ id: targetUserId, email, isAnonymous: false })
+        users.set(targetUserId, currentUser)
         pendingOtpEmail = null
       }
 
@@ -487,6 +669,14 @@ export async function installMockSupabase(
     }
 
     if (url.pathname === "/rest/v1/rpc/get_my_account_transfer_summary") {
+      if (options.failSummaryAfterMerge && consumedMerge) {
+        await fulfillJson(
+          route,
+          { code: "XX000", message: "Summary unavailable" },
+          500,
+        )
+        return
+      }
       const summary = options.accountSummary ?? {}
       await fulfillJson(route, {
         tasks: summary.tasks ?? tasks.length,
@@ -502,14 +692,82 @@ export async function installMockSupabase(
 
     if (url.pathname === "/rest/v1/rpc/prepare_account_merge") {
       const body = (request.postDataJSON() ?? {}) as Row
-      preparedMerge = {
+      const actor = userForRequest(request)
+      const requested = {
         token: String(body.p_token ?? ""),
         email: String(body.p_target_email ?? "")
           .trim()
           .toLocaleLowerCase("en-US"),
       }
+      if (!actor || actor.id !== userId || actor.is_anonymous !== true) {
+        authEvents.push("prepare-merge-source-invalid")
+        await fulfillJson(
+          route,
+          {
+            code: "42501",
+            message: "Only an anonymous account can prepare a merge",
+          },
+          403,
+        )
+        return
+      }
+      if (options.rejectFirstPrepareDefinitively && !prepareRejected) {
+        prepareRejected = true
+        authEvents.push("prepare-merge-rollback")
+        await fulfillJson(
+          route,
+          { code: "55000", message: "Prepared merge rejected" },
+          409,
+        )
+        return
+      }
+      if (
+        preparedMerge &&
+        (preparedMerge.token !== requested.token ||
+          preparedMerge.email !== requested.email)
+      ) {
+        await fulfillJson(
+          route,
+          { message: "Another account merge is already in progress" },
+          409,
+        )
+        return
+      }
+      preparedMerge = {
+        token: requested.token,
+        email: requested.email,
+      }
       authEvents.push("prepare-merge")
+      if (options.loseFirstPrepareResponse && !prepareResponseLost) {
+        prepareResponseLost = true
+        await route.abort("failed")
+        return
+      }
       await fulfillJson(route, new Date(Date.now() + 10 * 60_000).toISOString())
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/cancel_account_merge") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const token = String(body.p_token ?? "")
+      if (options.cancelMergeDelayMs) {
+        authEvents.push("cancel-merge-start")
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.cancelMergeDelayMs),
+        )
+      }
+      const alreadyConsumed = consumedMerge?.token === token
+      const actor = userForRequest(request)
+      const authorized =
+        actor?.id === userId ||
+        (actor?.is_anonymous === false && actor.email === preparedMerge?.email)
+      const cancelled =
+        !alreadyConsumed &&
+        (!preparedMerge ||
+          (preparedMerge.token === token && Boolean(authorized)))
+      if (cancelled) preparedMerge = null
+      authEvents.push(cancelled ? "cancel-merge" : "cancel-merge-miss")
+      await fulfillJson(route, cancelled)
       return
     }
 
@@ -521,12 +779,25 @@ export async function installMockSupabase(
 
     if (url.pathname === "/rest/v1/rpc/consume_account_merge") {
       const body = (request.postDataJSON() ?? {}) as Row
+      const receipt = consumedMerge
+      const claims = claimsForRequest(request)
+      const actor = userForRequest(request)
+      if (
+        receipt &&
+        receipt.token === body.p_token &&
+        actor?.id === receipt.targetUserId &&
+        claims?.session_id === receipt.targetSessionId
+      ) {
+        authEvents.push("recover-merge-receipt")
+        await fulfillJson(route, receipt.result)
+        return
+      }
       if (
         !preparedMerge ||
         preparedMerge.token !== body.p_token ||
-        !currentUser ||
-        currentUser.is_anonymous === true ||
-        currentUser.email !== preparedMerge.email
+        !actor ||
+        actor.is_anonymous === true ||
+        actor.email !== preparedMerge.email
       ) {
         await fulfillJson(
           route,
@@ -534,6 +805,34 @@ export async function installMockSupabase(
           403,
         )
         return
+      }
+      if (
+        options.timeoutBeforeMergeThenCapacityRollback &&
+        !mergeResponseLost
+      ) {
+        mergeResponseLost = true
+        await fulfillJson(route, { message: "Gateway timeout" }, 504)
+        return
+      }
+      if (options.rejectFirstMergeForCapacity && !capacityMergeRejected) {
+        capacityMergeRejected = true
+        await fulfillJson(
+          route,
+          {
+            code: "54000",
+            message: "Account merge would exceed the data limit for tasks",
+          },
+          500,
+        )
+        return
+      }
+      const result = {
+        tasks: options.accountSummary?.tasks ?? tasks.length,
+        sessions: options.accountSummary?.sessions ?? sessions.length,
+        behavior_events:
+          options.accountSummary?.behaviorEvents ?? behaviorEvents.length,
+        reminder_events: reminders.length,
+        reviews: options.accountSummary?.reviews ?? reviews.length,
       }
       for (const rows of [
         tasks,
@@ -543,19 +842,105 @@ export async function installMockSupabase(
         reviews,
       ]) {
         rows.forEach((row) => {
-          if (row.user_id === userId) row.user_id = currentUser?.id
+          if (row.user_id === userId) row.user_id = actor.id
         })
       }
+      consumedMerge = {
+        token: preparedMerge.token,
+        targetUserId: String(actor.id),
+        targetSessionId: String(claims?.session_id ?? ""),
+        result,
+      }
       preparedMerge = null
+      users.delete(userId)
+      currentUser = actor
       authEvents.push("consume-merge")
-      await fulfillJson(route, {
-        tasks: options.accountSummary?.tasks ?? tasks.length,
-        sessions: options.accountSummary?.sessions ?? sessions.length,
-        behavior_events:
-          options.accountSummary?.behaviorEvents ?? behaviorEvents.length,
-        reminder_events: reminders.length,
-        reviews: options.accountSummary?.reviews ?? reviews.length,
-      })
+      if (options.mergeResponseDelayMs) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.mergeResponseDelayMs),
+        )
+      }
+      if (options.loseFirstMergeResponse && !mergeResponseLost) {
+        mergeResponseLost = true
+        await route.abort("failed")
+        return
+      }
+      if (options.gatewayTimeoutAfterMerge && !mergeResponseLost) {
+        mergeResponseLost = true
+        await fulfillJson(route, { message: "Gateway timeout" }, 504)
+        return
+      }
+      if (options.invalidFirstMergeShape && !mergeResponseLost) {
+        mergeResponseLost = true
+        await fulfillJson(route, [])
+        return
+      }
+      await fulfillJson(route, result)
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/prepare_account_deletion") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const requestedToken = String(body.p_token ?? "")
+      if (preparedDeletionToken && preparedDeletionToken !== requestedToken) {
+        await fulfillJson(
+          route,
+          {
+            message: "Another account deletion verification is in progress",
+          },
+          409,
+        )
+        return
+      }
+      preparedDeletionToken = requestedToken
+      authEvents.push("prepare-deletion")
+      await fulfillJson(route, new Date(Date.now() + 10 * 60_000).toISOString())
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/refresh_account_deletion") {
+      authEvents.push("refresh-deletion")
+      await fulfillJson(route, new Date(Date.now() + 10 * 60_000).toISOString())
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/cancel_account_deletion") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const actor = userForRequest(request)
+      const cancelled =
+        !preparedDeletionToken ||
+        (preparedDeletionToken === String(body.p_token ?? "") &&
+          actor?.is_anonymous === false)
+      if (cancelled) preparedDeletionToken = null
+      authEvents.push(cancelled ? "cancel-deletion" : "cancel-deletion-miss")
+      await fulfillJson(route, cancelled)
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/delete_my_account") {
+      const actor = userForRequest(request)
+      if (!actor || actor.is_anonymous) {
+        await fulfillJson(
+          route,
+          {
+            code: "42501",
+            message: "A verified permanent account is required",
+          },
+          403,
+        )
+        return
+      }
+      users.delete(String(actor.id))
+      currentUser = null
+      preparedDeletionToken = null
+      tasks.length = 0
+      sessions.length = 0
+      behaviorEvents.length = 0
+      reminders.length = 0
+      reviews.length = 0
+      settings.length = 0
+      authEvents.push("delete-account")
+      await fulfillJson(route, null)
       return
     }
 
@@ -1135,6 +1520,26 @@ export async function installMockSupabase(
     permanentUserId,
     authEvents,
     currentUser: () => currentUser,
+    clearPersistentSession: async (targetPage) => {
+      currentUser = null
+      await targetPage.evaluate((storageKey) => {
+        localStorage.removeItem(storageKey)
+      }, "sb-127-auth-token")
+    },
+    switchPersistentSessionToTarget: async (targetPage) => {
+      const target = users.get(permanentUserId)
+      if (!target) throw new Error("Mock target account is missing")
+      currentUser = target
+      await targetPage.evaluate(
+        ({ storageKey, session }) => {
+          localStorage.setItem(storageKey, JSON.stringify(session))
+        },
+        {
+          storageKey: "sb-127-auth-token",
+          session: sessionPayload(target),
+        },
+      )
+    },
     studySessions: () => sessions,
   }
 }

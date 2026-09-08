@@ -430,6 +430,14 @@ export type Database = {
         Args: { p_token: string }
         Returns: Json
       }
+      cancel_account_deletion: {
+        Args: { p_token: string }
+        Returns: boolean
+      }
+      cancel_account_merge: {
+        Args: { p_token: string }
+        Returns: boolean
+      }
       consume_ai_generation_quota: { Args: never; Returns: boolean }
       delete_my_account: {
         Args: { p_token: string }

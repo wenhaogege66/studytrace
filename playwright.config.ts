@@ -5,7 +5,7 @@ const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: "./e2e",
-  testIgnore: /\.local\.spec\.ts$/,
+  testIgnore: [/\.local\.spec\.ts$/, /turnstile-failure\.spec\.ts$/],
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,

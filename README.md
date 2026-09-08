@@ -131,8 +131,10 @@ Supabase 端需要：
 2. 在 Auth 设置中开启匿名身份。
 3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
 4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
-5. 关闭公开邮箱注册、开启邮箱确认与 Manual Identity Linking；用 Resend SMTP 发送六位验证码（有效 10 分钟，60 秒后可重发）。
+5. 启用 Email provider、开启邮箱确认与 Manual Identity Linking，并保持 Phone provider / 手机号登录关闭；JWT 的 `amr=otp` 本身不能区分邮件和短信 OTP，因此关闭 Phone Auth 是账号合并与永久删除的硬性发布门禁，服务端也会拒绝带 phone provider 的身份。登录已有账号时前端固定使用 `shouldCreateUser: false`，避免登录误创建账号。用 Resend SMTP 发送六位验证码（有效 10 分钟，60 秒后可重发）。
 6. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
+
+已有邮箱合并使用一段随机 capability 处理关标签页和响应丢失：原始 capability 只在浏览器 `localStorage` 保留绝对 10 分钟，不会滑动续期；其中不包含 JWT、access token 或 refresh token。隔离目标会话的 access / refresh token 仅保留在当前标签页的 `sessionStorage`，另有不含密钥的核对标记保留 24 小时，用于提示用户重新验证目标邮箱。
 
 ## 测试
 
@@ -148,7 +150,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端公开首页；不会写入生产数据库。
+Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正、移动端账号操作，以及 Turnstile 脚本被阻断时的显式失败与不可绕过状态；不会写入生产数据库。
 
 数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。当前两份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
 
@@ -172,14 +174,14 @@ pnpm exec playwright test --config=playwright.local-auth.config.ts
 
 本地 Supabase 使用公开的开发凭据，部分 Docker 环境会把端口暴露到局域网；仅在可信网络且本机防火墙开启时运行，验收结束后执行 `npx supabase stop`。
 
-Mock E2E 与本地 SQL 通过仍不代表邮箱账号功能可以发布。Hosted Supabase 的匿名登录、邮箱确认、Manual Identity Linking、Turnstile 与重定向域名必须逐项复验；Resend SMTP 配置和 QQ、163、Outlook/Gmail 的真实六位验证码投递均是 Production 发布门禁。
+Mock E2E 与本地 SQL 通过仍不代表邮箱账号功能可以发布。Hosted Supabase 的匿名登录、邮箱确认、Manual Identity Linking、Phone Auth 关闭、Turnstile 与重定向域名必须逐项复验；Resend SMTP 配置和 QQ、163、Outlook/Gmail 的真实六位验证码投递均是 Production 发布门禁。
 
 ## 隐私与数据生命周期
 
 - 原始媒体始终留在浏览器内存，关闭摄像头后立即停止抽帧与 Worker。
 - 服务器只接收任务、会话、结构化事件、提醒响应、复盘和设置。
 - 用户可修正或硬删除单条事件，也可一键清除全部业务记录。
-- 临时身份与级联数据只在连续 30 天无活动后由数据库定时任务清理。
+- 临时身份与级联数据只在连续 30 天无活动后清理；数据库每 15 分钟处理至多 50 个身份，积压时由后续批次继续推进。
 - Turnstile 用于降低匿名入口和登录 / 合并邮件的滥用；新邮箱绑定由 Supabase 邮件限流保护。
 
 ## 路线图

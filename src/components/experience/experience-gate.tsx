@@ -1,6 +1,5 @@
 "use client"
 
-import { Turnstile } from "@marsidev/react-turnstile"
 import {
   ArrowRight,
   Database,
@@ -14,6 +13,7 @@ import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 
 import { AppShell } from "@/components/app-shell"
+import { TurnstileChallenge } from "@/components/auth/turnstile-challenge"
 import { useExperience } from "@/components/experience/experience-provider"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -154,7 +154,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
                 <p className="mb-3 text-sm text-slate-600">
                   完成一次安全校验后即进入产品。
                 </p>
-                <Turnstile
+                <TurnstileChallenge
                   siteKey={turnstileSiteKey}
                   onSuccess={(token) => void enter(token)}
                 />
@@ -164,7 +164,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             <Button
               size="lg"
               className="h-11 w-full"
-              disabled={!understood || status === "starting"}
+              disabled={!understood || status === "starting" || showChallenge}
               onClick={() => {
                 if (turnstileSiteKey) setShowChallenge(true)
                 else void enter()
