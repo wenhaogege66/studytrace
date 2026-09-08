@@ -426,7 +426,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      consume_account_merge: {
+        Args: { p_token: string }
+        Returns: Json
+      }
       consume_ai_generation_quota: { Args: never; Returns: boolean }
+      delete_my_account: {
+        Args: { p_token: string }
+        Returns: undefined
+      }
       delete_my_data: { Args: never; Returns: undefined }
       finish_study_session: {
         Args: {
@@ -460,6 +468,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_my_account_transfer_summary: { Args: never; Returns: Json }
       pause_study_session: {
         Args: {
           p_accumulated_seconds: number
@@ -519,6 +528,22 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      prepare_account_deletion: {
+        Args: { p_token: string }
+        Returns: string
+      }
+      prepare_account_merge: {
+        Args: { p_target_email: string; p_token: string }
+        Returns: string
+      }
+      refresh_account_deletion: {
+        Args: { p_token: string }
+        Returns: string
+      }
+      refresh_account_merge: {
+        Args: { p_token: string }
+        Returns: string
       }
       reopen_completed_task: {
         Args: { p_task_id: string }
@@ -661,6 +686,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      touch_my_activity: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never

@@ -10,19 +10,10 @@ import {
 } from "@/lib/auth/account"
 import { ensureSettings } from "@/lib/data/study-repository"
 import { getSupabase } from "@/lib/supabase/client"
+import type { Json } from "@/types/database"
 
 type DataError = { code?: string; message: string }
-type RpcResponse<T> = Promise<{ data: T | null; error: DataError | null }>
-type AuthRpcClient = {
-  rpc: (name: string, args?: Record<string, unknown>) => RpcResponse<unknown>
-}
-
-function authRpc<T>(name: string, args?: Record<string, unknown>) {
-  return (getSupabase() as unknown as AuthRpcClient).rpc(
-    name,
-    args,
-  ) as RpcResponse<T>
-}
+type JsonObject = { [key: string]: Json | undefined }
 
 function assertRpc<T>(
   response: { data: T | null; error: DataError | null },
@@ -34,28 +25,35 @@ function assertRpc<T>(
   return response.data
 }
 
-function assertRpcSuccess(response: {
-  data: unknown
-  error: DataError | null
-}) {
+function assertRpcSuccess(response: { error: DataError | null }) {
   if (response.error)
     throw Object.assign(new Error(response.error.message), response.error)
 }
 
-function asCount(value: unknown) {
+function assertJsonObject(value: Json, fallback: string): JsonObject {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new Error(fallback)
+  }
+  return value
+}
+
+function asCount(value: Json | undefined) {
   const count = Number(value)
   return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0
 }
 
 export async function touchMyActivity() {
-  const response = await authRpc<string>("touch_my_activity")
+  const response = await getSupabase().rpc("touch_my_activity")
   return assertRpc(response, "更新活动时间失败")
 }
 
 export async function getAccountTransferSummary(): Promise<AccountTransferSummary> {
-  const raw = assertRpc(
-    await authRpc<Record<string, unknown>>("get_my_account_transfer_summary"),
-    "读取待同步记录失败",
+  const raw = assertJsonObject(
+    assertRpc(
+      await getSupabase().rpc("get_my_account_transfer_summary"),
+      "读取待同步记录失败",
+    ),
+    "待同步记录格式异常",
   )
   return {
     tasks: asCount(raw.tasks),
@@ -129,7 +127,7 @@ export async function confirmAccountMerge(
   }
 
   assertRpc(
-    await authRpc<string>("prepare_account_merge", {
+    await getSupabase().rpc("prepare_account_merge", {
       p_token: flow.mergeSecret,
       p_target_email: flow.email,
     }),
@@ -182,7 +180,7 @@ export async function resendAccountOtp(
   if (flow.kind === "merge") {
     if (!flow.mergeSecret) throw new Error("记录合并凭证已丢失")
     assertRpc(
-      await authRpc<string>("refresh_account_merge", {
+      await getSupabase().rpc("refresh_account_merge", {
         p_token: flow.mergeSecret,
       }),
       "刷新记录合并请求失败",
@@ -190,7 +188,7 @@ export async function resendAccountOtp(
   } else if (flow.kind === "delete") {
     if (!flow.deletionSecret) throw new Error("删除验证凭证已丢失")
     assertRpc(
-      await authRpc<string>("refresh_account_deletion", {
+      await getSupabase().rpc("refresh_account_deletion", {
         p_token: flow.deletionSecret,
       }),
       "刷新删除验证请求失败",
@@ -236,11 +234,14 @@ export async function verifyAccountOtp(
     if (!flow.mergeSecret || data.user.is_anonymous) {
       throw new Error("无法确认记录合并身份")
     }
-    const raw = assertRpc(
-      await authRpc<Record<string, unknown>>("consume_account_merge", {
-        p_token: flow.mergeSecret,
-      }),
-      "合并匿名记录失败",
+    const raw = assertJsonObject(
+      assertRpc(
+        await getSupabase().rpc("consume_account_merge", {
+          p_token: flow.mergeSecret,
+        }),
+        "合并匿名记录失败",
+      ),
+      "合并结果格式异常",
     )
     merge = {
       tasks: asCount(raw.tasks),
@@ -269,7 +270,7 @@ export async function requestAccountDeletionOtp(
     throw new Error("删除验证准备已失效")
   }
   assertRpc(
-    await authRpc<string>("prepare_account_deletion", {
+    await getSupabase().rpc("prepare_account_deletion", {
       p_token: flow.deletionSecret,
     }),
     "准备账号删除失败",
@@ -307,11 +308,14 @@ export async function resumePendingAccountFlow(
   let merge: AccountMergeResult | null = null
   if (flow.kind === "merge") {
     if (!flow.mergeSecret) throw new Error("记录合并凭证已丢失，请重新发起")
-    const raw = assertRpc(
-      await authRpc<Record<string, unknown>>("consume_account_merge", {
-        p_token: flow.mergeSecret,
-      }),
-      "恢复记录合并失败",
+    const raw = assertJsonObject(
+      assertRpc(
+        await getSupabase().rpc("consume_account_merge", {
+          p_token: flow.mergeSecret,
+        }),
+        "恢复记录合并失败",
+      ),
+      "合并结果格式异常",
     )
     merge = {
       tasks: asCount(raw.tasks),
@@ -348,7 +352,7 @@ export async function verifyAndDeleteAccount(
     throw new Error("无法验证待删除账号")
 
   assertRpcSuccess(
-    await authRpc<undefined>("delete_my_account", {
+    await getSupabase().rpc("delete_my_account", {
       p_token: flow.deletionSecret,
     }),
   )
@@ -366,7 +370,7 @@ export async function signOutSafely() {
 
   if (data?.status === "running") {
     assertRpc(
-      await authRpc<unknown>("pause_study_session_for_navigation", {
+      await getSupabase().rpc("pause_study_session_for_navigation", {
         p_session_id: data.id,
       }),
       "暂停当前学习时段失败",
