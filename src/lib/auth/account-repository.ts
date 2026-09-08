@@ -19,7 +19,7 @@ import type { Json } from "@/types/database"
 
 type DataError = { code?: string; message: string }
 type JsonObject = { [key: string]: Json | undefined }
-const MERGE_RESEND_MIN_VALIDITY_MS = 60_000
+const MERGE_RESEND_MIN_VALIDITY_MS = 120_000
 
 function assertRpc<T>(
   response: { data: T | null; error: DataError | null },
@@ -435,7 +435,7 @@ export async function resendAccountOtp(
       Date.now() - flow.preparedAt >=
         ACCOUNT_MERGE_PREPARED_TTL_MS - MERGE_RESEND_MIN_VALIDITY_MS
     ) {
-      throw new Error("记录合并请求已过期，请重新发起")
+      throw new Error("记录合并请求即将过期，请重新发起")
     }
     const { data: sourceSession, error: sourceSessionError } =
       await getSupabase().auth.getSession()

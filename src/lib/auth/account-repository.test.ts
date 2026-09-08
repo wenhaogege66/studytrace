@@ -283,18 +283,18 @@ describe("account repository", () => {
     expect(result.mergeSecret).toBe(flow.mergeSecret)
   })
 
-  it("does not send an OTP when the merge capability has under one minute left", async () => {
+  it("does not send an OTP when the merge capability has under two minutes left", async () => {
     const flow = {
       kind: "merge" as const,
       email: "student@example.com",
-      sentAt: Date.now() - 9 * 60_000,
-      preparedAt: Date.now() - 9 * 60_000 - 1,
+      sentAt: Date.now() - 8 * 60_000,
+      preparedAt: Date.now() - 8 * 60_000 - 1,
       sourceUserId: "anonymous-user",
       mergeSecret: "c".repeat(64),
     }
 
     await expect(resendAccountOtp(flow, "captcha")).rejects.toThrow(
-      "记录合并请求已过期",
+      "记录合并请求即将过期",
     )
     expect(mocks.transientSignInWithOtp).not.toHaveBeenCalled()
     expect(mocks.rpc).not.toHaveBeenCalledWith(
@@ -735,6 +735,7 @@ describe("account repository", () => {
     })
     expect(consumeAttempts).toBe(2)
     expect(mocks.setSession).not.toHaveBeenCalled()
+    expect(mocks.transientSignOut).not.toHaveBeenCalled()
   })
 
   it("requires fresh target OTP when the merge committed but the persistent session disappeared", async () => {

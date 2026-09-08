@@ -126,13 +126,13 @@ AI 路由会先校验当前 Supabase 匿名会话，服务端重新验证三个�
 
 Supabase 端需要：
 
-1. 先按时间顺序应用常规迁移，但暂不应用
-   `20260907153524_revoke_direct_study_session_writes.sql`。
+1. 按文件名时间顺序应用全部迁移。PR #2 已在 Production 冒烟后完成
+   `20260908040800_revoke_direct_study_session_writes.sql` 权限切换；新环境无需再跳过该迁移。
 2. 在 Auth 设置中开启匿名身份。
 3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
 4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
 5. 启用 Email provider、开启邮箱确认与 Manual Identity Linking，并保持 Phone provider / 手机号登录关闭；JWT 的 `amr=otp` 本身不能区分邮件和短信 OTP，因此关闭 Phone Auth 是账号合并与永久删除的硬性发布门禁，服务端也会拒绝带 phone provider 的身份。登录已有账号时前端固定使用 `shouldCreateUser: false`，避免登录误创建账号。用 Resend SMTP 发送六位验证码（有效 10 分钟，60 秒后可重发）。
-6. 将已验收的 Preview deployment 原样提升到 Production 并完成真实匿名冒烟测试后，再单独应用上述 cutover 迁移。它会撤销浏览器对 `study_sessions` 的直接写权限，只保留受保护的生命周期 RPC；不可提前执行。
+6. 发布时先验证 Preview，再关闭 Production 的自动域名分配并从已合并的 `main` 生成 staged Production deployment；验证相同提交和 Production 环境变量后再原地 Promote，避免 Preview→Production 的重新构建改变验收产物。
 
 已有邮箱合并使用一段随机 capability 处理关标签页和响应丢失：原始 capability 只在浏览器 `localStorage` 保留绝对 10 分钟，不会滑动续期；其中不包含 JWT、access token 或 refresh token。隔离目标会话的 access / refresh token 仅保留在当前标签页的 `sessionStorage`，另有不含密钥的核对标记保留 24 小时，用于提示用户重新验证目标邮箱。
 
