@@ -147,7 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <nav
-        className="fixed inset-x-4 bottom-4 z-40 grid grid-cols-3 rounded-2xl border border-indigo-100 bg-white/95 p-1.5 shadow-xl shadow-indigo-950/10 backdrop-blur sm:hidden"
+        className="fixed inset-x-4 bottom-4 z-40 grid grid-cols-4 rounded-2xl border border-indigo-100 bg-white/95 p-1.5 shadow-xl shadow-indigo-950/10 backdrop-blur sm:hidden"
         aria-label="移动端导航"
       >
         {navigation.map(({ href, label, icon: Icon, exact }) => {

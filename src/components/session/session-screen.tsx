@@ -643,27 +643,30 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             experimentMode={session.experiment_mode}
             observationProfile={session.observation_profile}
             settings={settingsQuery.data}
-            onCameraStateChange={(enabled) => {
+            onCameraStateChange={async (enabled) => {
               const cameraVersion = cameraVersionRef.current + 1
               cameraVersionRef.current = cameraVersion
-              void sessionMutations.camera
-                .mutateAsync({
-                  sessionId,
-                  expectedStateVersion: stateVersionRef.current,
-                  cameraVersion,
-                  enabled,
-                })
-                .then((saved) => {
-                  stateVersionRef.current = Math.max(
-                    stateVersionRef.current,
-                    saved.state_version,
-                  )
-                  cameraVersionRef.current = Math.max(
-                    cameraVersionRef.current,
-                    saved.camera_version,
-                  )
-                })
-                .catch(() => undefined)
+              const saved = await sessionMutations.camera.mutateAsync({
+                sessionId,
+                expectedStateVersion: stateVersionRef.current,
+                cameraVersion,
+                enabled,
+              })
+              stateVersionRef.current = Math.max(
+                stateVersionRef.current,
+                saved.state_version,
+              )
+              cameraVersionRef.current = Math.max(
+                cameraVersionRef.current,
+                saved.camera_version,
+              )
+              if (saved.camera_enabled !== enabled) {
+                throw new Error(
+                  enabled
+                    ? "当前学习状态已变化，本地观察未开启"
+                    : "观察区间暂未收口",
+                )
+              }
             }}
           />
 

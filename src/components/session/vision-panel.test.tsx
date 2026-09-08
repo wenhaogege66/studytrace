@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mutations = vi.hoisted(() => ({
   create: vi.fn(),
   reminder: vi.fn(),
+  respondReminder: vi.fn(),
   update: vi.fn(),
 }))
 
@@ -11,6 +12,10 @@ vi.mock("@/hooks/use-study-data", () => ({
   useEventMutations: () => ({
     create: { mutateAsync: mutations.create },
     reminder: { mutateAsync: mutations.reminder },
+    respondReminder: {
+      mutateAsync: mutations.respondReminder,
+      isPending: false,
+    },
     update: { mutateAsync: mutations.update },
   }),
 }))
@@ -89,6 +94,8 @@ describe("VisionPanel model initialization cleanup", () => {
     vi.stubGlobal("Worker", TestWorker)
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined)
     mutations.create.mockResolvedValue({ id: "event-1" })
+    mutations.reminder.mockResolvedValue({ id: "reminder-1" })
+    mutations.respondReminder.mockResolvedValue({ id: "reminder-1" })
     mutations.update.mockResolvedValue(undefined)
   })
 
@@ -133,6 +140,34 @@ describe("VisionPanel model initialization cleanup", () => {
     expect(stopTrack).toHaveBeenCalledOnce()
     expect(onCameraStateChange).toHaveBeenLastCalledWith(false)
     expect(screen.getByText(/视觉模型加载超时/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
+  })
+
+  it("retries a failed camera-close sync before reporting the camera closed", async () => {
+    const onCameraStateChange = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined)
+    renderPanel(onCameraStateChange)
+
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    await act(async () => {})
+    const worker = TestWorker.instances[0]
+    await act(async () => worker.emit({ type: "ready" }))
+
+    expect(onCameraStateChange).toHaveBeenCalledWith(true)
+    fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
+    await act(async () => {})
+    expect(onCameraStateChange).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      vi.advanceTimersByTime(150)
+      await Promise.resolve()
+    })
+
+    expect(onCameraStateChange.mock.calls).toEqual([[true], [false], [false]])
+    expect(stopTrack).toHaveBeenCalledOnce()
     expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
   })
 
@@ -348,5 +383,52 @@ describe("VisionPanel model initialization cleanup", () => {
 
     expect(mutations.update).toHaveBeenCalledOnce()
     expect(stopTrack).toHaveBeenCalledOnce()
+  })
+
+  it("captures the user's factual response after a light reminder", async () => {
+    renderPanel()
+
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    await act(async () => {})
+    const worker = TestWorker.instances[0]
+    await act(async () => worker.emit({ type: "ready" }))
+
+    for (const timestampMs of [0, 1_500, 3_000]) {
+      await act(async () =>
+        worker.emit({
+          type: "observation",
+          observation: {
+            timestampMs,
+            facePresent: true,
+            yaw: 2,
+            pitch: 3,
+          },
+        }),
+      )
+    }
+    for (const timestampMs of [3_100, 8_100, 24_000]) {
+      await act(async () =>
+        worker.emit({
+          type: "observation",
+          observation: {
+            timestampMs,
+            facePresent: false,
+            yaw: null,
+            pitch: null,
+          },
+        }),
+      )
+    }
+    await act(async () => {})
+
+    expect(mutations.reminder).toHaveBeenCalledWith("event-1")
+    fireEvent.click(screen.getByRole("button", { name: "当时在正常操作" }))
+    await act(async () => {})
+
+    expect(mutations.respondReminder).toHaveBeenCalledWith({
+      reminderId: "reminder-1",
+      response: "normal_activity",
+    })
+    expect(screen.queryByText("刚才的轻提醒是否合适？")).not.toBeInTheDocument()
   })
 })

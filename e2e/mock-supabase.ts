@@ -32,6 +32,7 @@ type MockSupabaseOptions = {
     mergeSecret: string
   }
   seedRunningStudySession?: boolean
+  insightsReport?: Row
   accountSummary?: Partial<{
     tasks: number
     sessions: number
@@ -168,6 +169,8 @@ function settingRow(ownerId = userId): Row {
     reminder_cooldown_seconds: 600,
     yaw_threshold_degrees: 25,
     pitch_threshold_degrees: 20,
+    insights_enabled: true,
+    insights_timezone: "Asia/Shanghai",
     created_at: timestamp,
     updated_at: timestamp,
   }
@@ -998,6 +1001,72 @@ export async function installMockSupabase(
       reviews.length = 0
       settings.length = 0
       await fulfillJson(route, null)
+      return
+    }
+
+    if (url.pathname === "/rest/v1/rpc/get_my_insights") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const days = Number(body.p_days) === 7 ? 7 : 30
+      const report = options.insightsReport ?? {
+        enabled: true,
+        generated_at: now(),
+        overview: {
+          active_days: 0,
+          completed_tasks: 0,
+          actual_seconds: 0,
+          reviewed_sessions: 0,
+          terminal_sessions: 0,
+          review_coverage_percent: 0,
+        },
+        segments: {
+          eligible_count: 0,
+          median_seconds: 0,
+          backfilled_count: 0,
+          distribution: [{ id: "under_15", label: "2–15 分钟", count: 0 }],
+        },
+        time_buckets: [],
+        observation: {
+          observed_seconds: 0,
+          coverage_percent: 0,
+          confirmed_event_count: 0,
+          confirmed_events_per_hour: 0,
+          reminder_responses: {
+            none: 0,
+            dismissed: 0,
+            back_to_task: 0,
+            normal_activity: 0,
+            not_needed: 0,
+            later: 0,
+          },
+        },
+        precursor: {
+          evidence_window_days: 30,
+          manual_marker_count: 0,
+          correlated_marker_count: 0,
+          correlated_percent: 0,
+        },
+        readiness: {
+          evidence_window_days: 30,
+          evidence_eligible_segments: 0,
+          evidence_active_days: 0,
+          evidence_median_seconds: 0,
+          patterns_ready: false,
+          required_segments: 20,
+          required_active_days: 10,
+          precursor_ready: false,
+          required_manual_markers: 10,
+        },
+      }
+      await fulfillJson(route, {
+        ...report,
+        period: {
+          timezone: "Asia/Shanghai",
+          start_at: "2026-08-10T16:00:00.000Z",
+          end_at: "2026-09-09T16:00:00.000Z",
+          ...(typeof report.period === "object" ? report.period : {}),
+          days,
+        },
+      })
       return
     }
 

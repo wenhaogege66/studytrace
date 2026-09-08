@@ -33,6 +33,7 @@ import {
   pauseSession,
   resumeSession,
   reopenCompletedTask,
+  respondToReminder,
   saveReview,
   setSessionCameraEnabled,
   setTaskStepCompleted,
@@ -41,6 +42,7 @@ import {
   updateBehaviorEvent,
   updateSettings,
   updateTask,
+  type ReminderResponse,
 } from "@/lib/data/study-repository"
 import type {
   BehaviorEventType,
@@ -490,6 +492,15 @@ export function useEventMutations(sessionId: string) {
     reminder: useMutation({
       mutationFn: (eventId: string | null) =>
         createReminderEvent(userId, sessionId, eventId),
+    }),
+    respondReminder: useMutation({
+      mutationFn: ({
+        reminderId,
+        response,
+      }: {
+        reminderId: string
+        response: ReminderResponse
+      }) => respondToReminder(userId, reminderId, response),
     }),
   }
 }

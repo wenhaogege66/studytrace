@@ -125,15 +125,15 @@ export default function Home() {
               variant="outline"
               className="mb-6 border-indigo-200 bg-white/70 px-3 py-1.5 text-indigo-800"
             >
-              <Sparkles className="size-3.5" /> StudyTrace v0.1 · 可运行产品
+              <Sparkles className="size-3.5" /> StudyTrace v0.2 · 可运行产品
             </Badge>
             <h1 className="max-w-4xl text-5xl leading-[1.06] font-semibold tracking-[-0.04em] text-balance text-slate-950 sm:text-6xl lg:text-7xl">
               让一次学习，留下可以调整的
               <span className="text-indigo-700">迹</span>。
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-pretty text-slate-600 sm:text-xl">
-              学迹
-              StudyTrace——基于计算机视觉的任务管理与注意状态识别一体化学习辅助系统。它把任务拆分、稳定计时、本地视觉观察与一次复盘连成闭环。
+              学迹 StudyTrace 是一个面向自律执行的隐私优先工具。它把任务设计、AI
+              拆解、多次执行、本地视频观察、单次复盘与长期规律连成闭环。
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button size="lg" className="h-11 px-5" asChild>
@@ -396,21 +396,26 @@ export default function Home() {
       <section className="content-auto border-y border-indigo-100 bg-white/70 px-5 py-20">
         <div className="mx-auto w-full max-w-7xl">
           <p className="section-kicker">Roadmap / 版本里程碑</p>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
               [
-                "v0.1 · 当前",
+                "v0.1 · 基础闭环",
                 "完整任务—会话—复盘闭环；本地视觉观察；匿名安全数据层。",
                 true,
               ],
               [
-                "v0.2 · 下一步",
-                "更多手动观察维度、复盘趋势视图与可解释阈值校准。",
-                false,
+                "v0.1.1 · 任务连续性",
+                "横向任务工作台、待确认完成、多次 Session 与可选邮箱跨设备同步。",
+                true,
               ],
               [
-                "v0.3 · 验证后",
-                "在明确同意前提下探索跨设备恢复与数据导出，不改变本地视觉原则。",
+                "v0.2 · 事实型洞察",
+                "展示投入片段、时段、复盘与用户确认事件，并在样本足够后给出实验建议。",
+                true,
+              ],
+              [
+                "v0.3 · 下一步",
+                "探索数据导出、明确同意后的聚合 AI 报告，以及独立的全身运动识别实验。",
                 false,
               ],
             ].map(([title, description, current]) => (

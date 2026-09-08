@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { useEventMutations } from "@/hooks/use-study-data"
+import type { ReminderResponse } from "@/lib/data/study-repository"
 import type { EventDirection } from "@/lib/domain"
 import {
   createDetectorState,
@@ -50,6 +51,7 @@ type VisionPhase =
 
 export const VISION_MODEL_INIT_TIMEOUT_MS = 20_000
 const EVENT_CLOSE_RETRY_DELAYS_MS = [0, 150, 500] as const
+const CAMERA_STATE_RETRY_DELAYS_MS = [0, 150, 500] as const
 
 function directionLabel(direction: EventDirection | null) {
   if (direction === "left") return "向左"
@@ -82,7 +84,7 @@ export function VisionPanel({
     pitch_threshold_degrees: number
     reminders_enabled: boolean
   }
-  onCameraStateChange: (enabled: boolean) => void
+  onCameraStateChange: (enabled: boolean) => Promise<void> | void
 }) {
   const profile = getObservationProfile(observationProfile)
   const events = useEventMutations(sessionId)
@@ -92,6 +94,7 @@ export function VisionPanel({
   const [calibrationProgress, setCalibrationProgress] = useState(0)
   const [calibrationWaitingForFace, setCalibrationWaitingForFace] =
     useState(true)
+  const [pendingReminderIds, setPendingReminderIds] = useState<string[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const workerRef = useRef<Worker | null>(null)
@@ -168,6 +171,30 @@ export function VisionPanel({
     finishActiveEventRef.current = finishActiveEvent
   }, [finishActiveEvent])
 
+  const syncCameraState = useCallback(
+    async (enabled: boolean, canRetry: () => boolean = () => true) => {
+      for (const delayMs of CAMERA_STATE_RETRY_DELAYS_MS) {
+        if (!canRetry()) return false
+        if (delayMs)
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        if (!canRetry()) return false
+        try {
+          await onCameraStateChange(enabled)
+          return true
+        } catch {
+          // A lost response can hide a successful write, so retry the same
+          // desired state. The server-side camera version makes it idempotent.
+        }
+      }
+      return false
+    },
+    [onCameraStateChange],
+  )
+  const syncCameraStateRef = useRef(syncCameraState)
+  useEffect(() => {
+    syncCameraStateRef.current = syncCameraState
+  }, [syncCameraState])
+
   const stop = useCallback(
     async (failureMessage?: string) => {
       if (stoppingRef.current) return
@@ -188,23 +215,32 @@ export function VisionPanel({
         const eventClosed = await finishActiveEvent()
         inferenceBusyRef.current = false
         detectorRef.current = createDetectorState()
+        const cameraStateSynced = await syncCameraState(false)
         if (mountedRef.current) {
           if (!eventClosed)
             toast.error("观察事件结束时间暂未同步，下次关闭时会继续重试")
-          setPhase(failureMessage ? "error" : "idle")
-          setError(failureMessage ?? null)
+          if (!cameraStateSynced)
+            toast.error(
+              "本地摄像头已关闭，但观察记录暂未同步；暂停学习可再次收口",
+            )
+          setPhase(failureMessage || !cameraStateSynced ? "error" : "idle")
+          setError(
+            failureMessage ??
+              (cameraStateSynced
+                ? null
+                : "本地画面和推理已停止，但观察区间暂未同步。请检查网络后重试，或暂停本次学习。"),
+          )
           setStatusText(
             failureMessage ? "本地视觉已停止" : "摄像头已关闭，本地推理已停止",
           )
           setCalibrationProgress(0)
           setCalibrationWaitingForFace(true)
-          onCameraStateChange(false)
         }
       } finally {
         stoppingRef.current = false
       }
     },
-    [finishActiveEvent, onCameraStateChange],
+    [finishActiveEvent, syncCameraState],
   )
 
   const handleEffects = useCallback(
@@ -265,7 +301,22 @@ export function VisionPanel({
                 : "检测到一个持续画面事件。这只是轻提醒，不是对专注程度的判断。",
             duration: 6_000,
           })
-          await events.reminder.mutateAsync(activeEventIdRef.current)
+          try {
+            const reminder = await events.reminder.mutateAsync(
+              activeEventIdRef.current,
+            )
+            setPendingReminderIds((current) =>
+              current.includes(reminder.id)
+                ? current
+                : [...current, reminder.id],
+            )
+          } catch (reminderError) {
+            toast.error(
+              reminderError instanceof Error
+                ? reminderError.message
+                : "轻提醒暂未记录",
+            )
+          }
         }
       }
     },
@@ -384,12 +435,31 @@ export function VisionPanel({
           if (event.data.type === "ready") {
             if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
             initTimeoutRef.current = null
-            setPhase("calibrating")
-            setCalibrationWaitingForFace(true)
-            setCalibrationProgress(0)
-            setStatusText("等待你进入画面，识别到有效面部后再开始基线采集")
-            onCameraStateChange(true)
-            startSampling()
+            setStatusText("正在同步本次观察区间")
+            void (async () => {
+              const cameraStateSynced = await syncCameraState(
+                true,
+                () =>
+                  mountedRef.current &&
+                  operationId === startOperationRef.current,
+              )
+              if (
+                !mountedRef.current ||
+                operationId !== startOperationRef.current
+              )
+                return
+              if (!cameraStateSynced) {
+                await stop(
+                  "观察区间未能同步，已安全关闭本地摄像头。请检查网络后重试。",
+                )
+                return
+              }
+              setPhase("calibrating")
+              setCalibrationWaitingForFace(true)
+              setCalibrationProgress(0)
+              setStatusText("等待你进入画面，识别到有效面部后再开始基线采集")
+              startSampling()
+            })()
             return
           }
           if (event.data.type === "observation") {
@@ -497,6 +567,26 @@ export function VisionPanel({
     }
   }
 
+  const respondToCurrentReminder = async (response: ReminderResponse) => {
+    const reminderId = pendingReminderIds[0]
+    if (!reminderId) return
+    try {
+      await events.respondReminder.mutateAsync({ reminderId, response })
+      setPendingReminderIds((current) =>
+        current[0] === reminderId
+          ? current.slice(1)
+          : current.filter((id) => id !== reminderId),
+      )
+      toast.success("提醒反馈已记录")
+    } catch (responseError) {
+      toast.error(
+        responseError instanceof Error
+          ? responseError.message
+          : "提醒反馈暂未保存",
+      )
+    }
+  }
+
   useEffect(() => {
     if (paused && phase !== "idle" && phase !== "error") void stop()
   }, [paused, phase, stop])
@@ -510,7 +600,10 @@ export function VisionPanel({
       if (intervalRef.current) clearInterval(intervalRef.current)
       workerRef.current?.terminate()
       streamRef.current?.getTracks().forEach((track) => track.stop())
-      void effectsQueueRef.current.then(() => finishActiveEventRef.current())
+      void effectsQueueRef.current.then(async () => {
+        await finishActiveEventRef.current()
+        await syncCameraStateRef.current(false)
+      })
     }
   }, [])
 
@@ -602,6 +695,39 @@ export function VisionPanel({
                 <TriangleAlert />
                 <AlertTitle>视觉能力未启用</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            {pendingReminderIds.length > 0 ? (
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                <Eye />
+                <AlertTitle>刚才的轻提醒是否合适？</AlertTitle>
+                <AlertDescription>
+                  <p>
+                    选择当时的实际情况。这些反馈只用于你自己的汇总，不会转换为专注分数。
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["back_to_task", "已回到任务"],
+                        ["normal_activity", "当时在正常操作"],
+                        ["not_needed", "不需要提醒"],
+                        ["later", "稍后处理"],
+                      ] as const
+                    ).map(([response, label]) => (
+                      <Button
+                        key={response}
+                        size="sm"
+                        variant="outline"
+                        className="min-h-11 bg-white"
+                        disabled={events.respondReminder.isPending}
+                        onClick={() => void respondToCurrentReminder(response)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </AlertDescription>
               </Alert>
             ) : null}
 
