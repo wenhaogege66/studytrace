@@ -82,9 +82,13 @@ Supabase 中的核心业务表与派生事实表均启用 RLS。浏览器只使�
 - `reviews`：完成状态、自评、未完成原因和下次调整。
 - `user_settings`：授权版本、开关、阈值、IANA 时区和洞察设置。
 - `session_segments`：每次开始、恢复、暂停和结束形成的连续投入段。
-- `observation_runs`：摄像头启停区间、观察策略、阈值和检测器版本；不含画面或关键点。
-- `task_lifecycle_events`、`task_step_events`：任务和步骤的完成、重开、归档等事实历史。
-- 私有 `user_activity`、`account_merge_tokens`、`account_delete_tokens`：匿名活跃期清理与一次性账号操作凭证。
+- `observation_runs`：摄像头启停区间、最后一次服务端观察心跳、观察策略、阈值和检测器版本；不含画面或关键点。
+- `task_lifecycle_events`、`task_step_events`：任务和步骤的完成、重开、归档等事实历史；步骤改名前后的标题都会保留。
+- 私有 `user_activity`、`account_merge_tokens`、`account_delete_tokens`、`insight_fact_coverage`：匿名活跃期清理、一次性账号操作凭证与事实历史完整性状态。
+
+洞察关闭后会立即封口当前投入段和观察区间，关闭期间不产生新的派生事实；重新开启只从当下继续，不回填关闭区间。修改统计时区会按新时区重新解释全部既有记录，而不是冻结历史日历标签。用户级投入和观察时长先做时间区间并集，避免账号合并后的重叠记录重复计时；跨时段会话的复盘和完成结果只归到实际投入最长的时段（并列时按页面时段顺序），复盘覆盖率则按会话结束时间归属当前窗口。
+
+运行中的学习计时与本地观察每 60 秒向服务端发送一次不含画面内容的存活确认。连续超过 120 秒没有服务端确认会被视为一次中断：旧区间只记录到最后确认点，重新打开页面时从当前时刻建立新区间，离线空档不会回填到计时或长期规律中。
 
 迁移位于 `supabase/migrations`。数据库验收脚本位于 `supabase/tests/database.test.sql`、`supabase/tests/account_sync.test.sql` 与 `supabase/tests/insights.test.sql`，覆盖：
 
@@ -161,7 +165,7 @@ pnpm test:e2e
 
 Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正、移动端账号操作，以及 Turnstile 脚本被阻断时的显式失败与不可绕过状态；不会写入生产数据库。
 
-数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。当前两份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
+数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。三份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
 
 ```bash
 npx supabase start
@@ -175,11 +179,15 @@ psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
   -v ON_ERROR_STOP=1 \
   -f supabase/tests/account_sync.test.sql
 
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/tests/insights.test.sql
+
 # 保持本地 Supabase 与 Mailpit 运行，验证真实 Auth/OTP/合并链路
 pnpm exec playwright test --config=playwright.local-auth.config.ts
 ```
 
-如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。PR4 合入后会新增第三份洞察 SQL 验收脚本，并排在以上两份之后执行。
+如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。
 
 本地 Supabase 使用公开的开发凭据，部分 Docker 环境会把端口暴露到局域网；仅在可信网络且本机防火墙开启时运行，验收结束后执行 `npx supabase stop`。
 

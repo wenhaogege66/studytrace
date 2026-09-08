@@ -25,6 +25,7 @@ import {
   getSession,
   getSettings,
   getTask,
+  heartbeatObservationRun,
   listBehaviorEvents,
   listTaskSessions,
   listTasks,
@@ -397,6 +398,19 @@ export function useSessionMutations() {
           accumulatedSeconds,
           checkpointedAt,
         ),
+      onSuccess: (session) => cacheSession(queryClient, userId, session),
+    }),
+    observationHeartbeat: useMutation({
+      mutationFn: ({
+        sessionId,
+        expectedStateVersion,
+        cameraVersion,
+      }: {
+        sessionId: string
+        expectedStateVersion: number
+        cameraVersion: number
+      }) =>
+        heartbeatObservationRun(sessionId, expectedStateVersion, cameraVersion),
     }),
     finish: useMutation({
       onMutate: ({ sessionId }) =>

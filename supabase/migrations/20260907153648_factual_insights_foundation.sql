@@ -181,6 +181,8 @@ create table public.observation_runs (
   session_id uuid not null references public.study_sessions(id) on delete cascade,
   started_at timestamptz not null,
   ended_at timestamptz,
+  last_observed_at timestamptz not null default clock_timestamp(),
+  camera_version bigint not null default 0 check (camera_version >= 0),
   observation_profile text not null
     check (
       observation_profile in (
@@ -200,7 +202,12 @@ create table public.observation_runs (
     check (origin in ('runtime', 'backfill')),
   created_at timestamptz not null default now(),
   constraint observation_runs_ended_after_started
-    check (ended_at is null or ended_at >= started_at)
+    check (ended_at is null or ended_at >= started_at),
+  constraint observation_runs_heartbeat_bounds
+    check (
+      last_observed_at >= started_at
+      and (ended_at is null or last_observed_at <= ended_at)
+    )
 );
 
 create table public.task_lifecycle_events (
@@ -246,6 +253,33 @@ create table public.task_step_events (
   occurred_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+-- Fact capture deliberately fails open for the core task/session workflow when
+-- a defensive cap is reached. Keep a private, durable completeness marker so a
+-- partial history is never presented as a complete factual report.
+create table private.insight_fact_coverage (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  truncated boolean not null default false,
+  first_truncated_at timestamptz,
+  last_truncated_at timestamptz,
+  dropped_counts jsonb not null default '{}'::jsonb
+    check (jsonb_typeof(dropped_counts) = 'object'),
+  created_at timestamptz not null default clock_timestamp(),
+  updated_at timestamptz not null default clock_timestamp(),
+  constraint insight_fact_coverage_timestamp_check check (
+    (not truncated and first_truncated_at is null and last_truncated_at is null)
+    or (
+      truncated
+      and first_truncated_at is not null
+      and last_truncated_at is not null
+      and last_truncated_at >= first_truncated_at
+    )
+  )
+);
+
+alter table private.insight_fact_coverage enable row level security;
+revoke all on table private.insight_fact_coverage
+  from public, anon, authenticated;
 
 create unique index session_segments_one_open_per_session_idx
   on public.session_segments (session_id)
@@ -381,8 +415,43 @@ begin
 
   -- Insight bookkeeping must never trap the user in an active session. Once a
   -- defensive cap is reached, skip new derived facts while core task/session
-  -- state continues to work.
+  -- state continues to work, but preserve an explicit incompleteness marker.
   if user_rows >= per_user_limit or parent_rows >= per_parent_limit then
+    insert into private.insight_fact_coverage (
+      user_id,
+      truncated,
+      first_truncated_at,
+      last_truncated_at,
+      dropped_counts,
+      updated_at
+    ) values (
+      owner_id,
+      true,
+      clock_timestamp(),
+      clock_timestamp(),
+      jsonb_build_object(tg_table_name, 1),
+      clock_timestamp()
+    )
+    on conflict (user_id) do update
+    set
+      truncated = true,
+      first_truncated_at = coalesce(
+        private.insight_fact_coverage.first_truncated_at,
+        excluded.first_truncated_at
+      ),
+      last_truncated_at = excluded.last_truncated_at,
+      dropped_counts = private.insight_fact_coverage.dropped_counts
+        || jsonb_build_object(
+          tg_table_name,
+          coalesce(
+            (
+              private.insight_fact_coverage.dropped_counts
+                ->> tg_table_name
+            )::bigint,
+            0
+          ) + 1
+        ),
+      updated_at = excluded.updated_at;
     return null;
   end if;
 
@@ -408,22 +477,6 @@ for each row execute function private.limit_insight_fact_growth();
 create trigger task_step_events_limit_growth
 before insert on public.task_step_events
 for each row execute function private.limit_insight_fact_growth();
-
-create trigger session_segments_touch_user_activity
-after insert or update on public.session_segments
-for each row execute function private.touch_user_activity_from_row();
-
-create trigger observation_runs_touch_user_activity
-after insert or update on public.observation_runs
-for each row execute function private.touch_user_activity_from_row();
-
-create trigger task_lifecycle_events_touch_user_activity
-after insert or update on public.task_lifecycle_events
-for each row execute function private.touch_user_activity_from_row();
-
-create trigger task_step_events_touch_user_activity
-after insert or update on public.task_step_events
-for each row execute function private.touch_user_activity_from_row();
 
 -- Account merges move the parent rows without changing their ids. Cascade the
 -- owner onto derived facts before the anonymous auth user is deleted, so the
@@ -493,6 +546,17 @@ declare
   policy_snapshot jsonb;
   threshold_snapshot jsonb;
 begin
+  if not coalesce(
+    (
+      select settings.insights_enabled
+      from public.user_settings as settings
+      where settings.user_id = new.user_id
+    ),
+    true
+  ) then
+    return new;
+  end if;
+
   if tg_op = 'INSERT' then
     if new.status = 'running' then
       insert into public.session_segments (
@@ -557,7 +621,8 @@ begin
           then coalesce(new.ended_at, transition_at)
         else transition_at
       end,
-      started_at
+      started_at,
+      last_observed_at
     )
     where session_id = new.id
       and user_id = new.user_id
@@ -594,6 +659,8 @@ begin
       user_id,
       session_id,
       started_at,
+      last_observed_at,
+      camera_version,
       observation_profile,
       detector_version,
       experiment_mode,
@@ -605,6 +672,8 @@ begin
       new.user_id,
       new.id,
       transition_at,
+      transition_at,
+      new.camera_version,
       new.observation_profile,
       'mediapipe-face-landmarker@1.0.1',
       new.experiment_mode,
@@ -639,6 +708,17 @@ declare
   lifecycle_type text;
   transition_at timestamptz := clock_timestamp();
 begin
+  if not coalesce(
+    (
+      select settings.insights_enabled
+      from public.user_settings as settings
+      where settings.user_id = new.user_id
+    ),
+    true
+  ) then
+    return new;
+  end if;
+
   if tg_op = 'INSERT' then
     insert into public.task_lifecycle_events (
       user_id,
@@ -731,6 +811,17 @@ declare
   is_complete boolean;
   transition_at timestamptz := clock_timestamp();
 begin
+  if not coalesce(
+    (
+      select settings.insights_enabled
+      from public.user_settings as settings
+      where settings.user_id = new.user_id
+    ),
+    true
+  ) then
+    return new;
+  end if;
+
   if tg_op = 'INSERT' then
     for changed_step in
       select
@@ -1013,6 +1104,8 @@ insert into public.observation_runs (
   user_id,
   session_id,
   started_at,
+  last_observed_at,
+  camera_version,
   observation_profile,
   detector_version,
   experiment_mode,
@@ -1024,6 +1117,8 @@ select
   session.user_id,
   session.id,
   greatest(session.started_at, session.updated_at),
+  greatest(session.started_at, session.updated_at),
+  session.camera_version,
   session.observation_profile,
   'mediapipe-face-landmarker@1.0.1',
   session.experiment_mode,
@@ -1077,6 +1172,93 @@ revoke all on function public.update_my_insights_preferences(boolean, text)
 grant execute on function public.update_my_insights_preferences(boolean, text)
   to authenticated;
 
+create or replace function private.insight_effective_end(
+  p_started_at timestamptz,
+  p_ended_at timestamptz,
+  p_last_confirmed_at timestamptz,
+  p_report_generated_at timestamptz
+)
+returns timestamptz
+language sql
+immutable
+set search_path = ''
+as $$
+  select greatest(
+    p_started_at,
+    least(
+      coalesce(p_ended_at, p_last_confirmed_at, p_started_at),
+      p_report_generated_at
+    )
+  );
+$$;
+
+revoke all on function private.insight_effective_end(
+  timestamptz, timestamptz, timestamptz, timestamptz
+) from public, anon, authenticated;
+
+create or replace function private.insight_bucket_ranges(
+  p_start_at timestamptz,
+  p_end_at timestamptz,
+  p_timezone text
+)
+returns table (bucket_id text, bucket_start timestamptz, bucket_end timestamptz)
+language sql
+stable
+set search_path = ''
+as $$
+  with absolute_minutes as (
+    select
+      absolute_minute.value as minute_start,
+      absolute_minute.value + interval '1 minute' as minute_end,
+      case
+        when extract(hour from (
+          (absolute_minute.value + interval '30 seconds') at time zone p_timezone
+        )) < 5 then 'night'
+        when extract(hour from (
+          (absolute_minute.value + interval '30 seconds') at time zone p_timezone
+        )) < 11 then 'morning'
+        when extract(hour from (
+          (absolute_minute.value + interval '30 seconds') at time zone p_timezone
+        )) < 14 then 'midday'
+        when extract(hour from (
+          (absolute_minute.value + interval '30 seconds') at time zone p_timezone
+        )) < 18 then 'afternoon'
+        else 'evening'
+      end as bucket_id
+    from pg_catalog.generate_series(
+      pg_catalog.date_trunc('minute', p_start_at),
+      pg_catalog.date_trunc('minute', p_end_at - interval '1 microsecond'),
+      interval '1 minute'
+    ) as absolute_minute(value)
+    where p_end_at > p_start_at
+  ), minute_boundaries as (
+    select
+      minute.*,
+      case
+        when lag(bucket_id) over (order by minute_start)
+          is distinct from bucket_id then 1
+        else 0
+      end as starts_bucket_range
+    from absolute_minutes as minute
+  ), grouped_minutes as (
+    select
+      minute.*,
+      sum(starts_bucket_range) over (order by minute_start) as range_group
+    from minute_boundaries as minute
+  )
+  select
+    grouped.bucket_id,
+    min(grouped.minute_start) as bucket_start,
+    max(grouped.minute_end) as bucket_end
+  from grouped_minutes as grouped
+  group by grouped.bucket_id, grouped.range_group
+  order by bucket_start;
+$$;
+
+revoke all on function private.insight_bucket_ranges(
+  timestamptz, timestamptz, text
+) from public, anon, authenticated;
+
 create or replace function public.get_my_insights(p_days integer default 7)
 returns jsonb
 language plpgsql
@@ -1116,6 +1298,12 @@ declare
   segment_distribution jsonb := '[]'::jsonb;
   time_buckets jsonb := '[]'::jsonb;
   reminder_responses jsonb := '{}'::jsonb;
+  facts_truncated boolean := false;
+  fact_dropped_counts jsonb := '{}'::jsonb;
+  first_truncated_at timestamptz;
+  last_truncated_at timestamptz;
+  period_complete boolean := true;
+  recommendation_evidence_complete boolean := true;
 begin
   if caller_id is null then
     raise exception 'authentication required' using errcode = '42501';
@@ -1132,6 +1320,22 @@ begin
 
   selected_timezone := coalesce(selected_timezone, 'Asia/Shanghai');
   selected_enabled := coalesce(selected_enabled, true);
+
+  select
+    coverage.truncated,
+    coverage.dropped_counts,
+    coverage.first_truncated_at,
+    coverage.last_truncated_at
+  into
+    facts_truncated,
+    fact_dropped_counts,
+    first_truncated_at,
+    last_truncated_at
+  from private.insight_fact_coverage as coverage
+  where coverage.user_id = caller_id;
+
+  facts_truncated := coalesce(facts_truncated, false);
+  fact_dropped_counts := coalesce(fact_dropped_counts, '{}'::jsonb);
   local_today := (generated_at at time zone selected_timezone)::date;
   period_start := (
     (local_today - (p_days - 1))::timestamp at time zone selected_timezone
@@ -1143,12 +1347,18 @@ begin
     (local_today - 29)::timestamp at time zone selected_timezone
   );
   evidence_end := period_end;
+  period_complete := not facts_truncated
+    or last_truncated_at < period_start
+    or first_truncated_at >= period_end;
+  recommendation_evidence_complete := not facts_truncated
+    or last_truncated_at < evidence_start
+    or first_truncated_at >= evidence_end;
 
   if selected_enabled then
     with clipped_segments as (
       select
         greatest(segment.started_at, period_start) as segment_start,
-        least(coalesce(segment.ended_at, generated_at), period_end)
+        least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           as segment_end,
         segment.origin
       from public.session_segments as segment
@@ -1158,7 +1368,7 @@ begin
       where segment.user_id = caller_id
         and not session.experiment_mode
         and segment.started_at < period_end
-        and coalesce(segment.ended_at, generated_at) > period_start
+        and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
     ), valid_segments as (
       select
         segment_start,
@@ -1168,6 +1378,21 @@ begin
           as seconds
       from clipped_segments
       where segment_end >= segment_start + interval '2 minutes'
+    ), canonical_ranges as (
+      -- A user can merge two histories whose wall-clock intervals overlap.
+      -- Range union keeps personal totals, samples and medians factual instead
+      -- of counting simultaneous records twice.
+      select unnest(
+        range_agg(tstzrange(segment_start, segment_end, '[)'))
+      ) as active_range
+      from valid_segments
+    ), canonical_segments as (
+      select
+        lower(active_range) as segment_start,
+        upper(active_range) as segment_end,
+        floor(extract(epoch from (upper(active_range) - lower(active_range))))
+          ::integer as seconds
+      from canonical_ranges
     )
     select
       count(*)::integer,
@@ -1176,7 +1401,7 @@ begin
           (day_segment.segment_start at time zone selected_timezone)::date
           + day_offset.value
         ))::integer
-        from valid_segments as day_segment
+        from canonical_segments as day_segment
         cross join lateral pg_catalog.generate_series(
           0,
           greatest(
@@ -1196,21 +1421,21 @@ begin
         percentile_cont(0.5) within group (order by seconds),
         0
       )::integer,
-      count(*) filter (where origin = 'backfill')::integer
+      (select count(*) from valid_segments where origin = 'backfill')::integer
     into
       eligible_segments,
       active_days,
       actual_seconds,
       median_segment_seconds,
       backfilled_segments
-    from valid_segments;
+    from canonical_segments;
 
     -- Recommendation readiness always uses a trailing 30-natural-day evidence
     -- pool, even when the user is viewing the shorter 7-day summary.
     with clipped_segments as (
       select
         greatest(segment.started_at, evidence_start) as segment_start,
-        least(coalesce(segment.ended_at, generated_at), evidence_end)
+        least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), evidence_end)
           as segment_end
       from public.session_segments as segment
       join public.study_sessions as session
@@ -1219,7 +1444,7 @@ begin
       where segment.user_id = caller_id
         and not session.experiment_mode
         and segment.started_at < evidence_end
-        and coalesce(segment.ended_at, generated_at) > evidence_start
+        and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > evidence_start
     ), valid_segments as (
       select
         segment_start,
@@ -1228,6 +1453,18 @@ begin
           as seconds
       from clipped_segments
       where segment_end >= segment_start + interval '2 minutes'
+    ), canonical_ranges as (
+      select unnest(
+        range_agg(tstzrange(segment_start, segment_end, '[)'))
+      ) as active_range
+      from valid_segments
+    ), canonical_segments as (
+      select
+        lower(active_range) as segment_start,
+        upper(active_range) as segment_end,
+        floor(extract(epoch from (upper(active_range) - lower(active_range))))
+          ::integer as seconds
+      from canonical_ranges
     )
     select
       count(*)::integer,
@@ -1236,7 +1473,7 @@ begin
           (day_segment.segment_start at time zone selected_timezone)::date
           + day_offset.value
         ))::integer
-        from valid_segments as day_segment
+        from canonical_segments as day_segment
         cross join lateral pg_catalog.generate_series(
           0,
           greatest(
@@ -1259,18 +1496,20 @@ begin
       evidence_eligible_segments,
       evidence_active_days,
       evidence_median_segment_seconds
-    from valid_segments;
+    from canonical_segments;
 
     with clipped_segments as (
       select
-        floor(
-          extract(
-            epoch from (
-              least(coalesce(segment.ended_at, generated_at), period_end)
-              - greatest(segment.started_at, period_start)
-            )
-          )
-        )::integer as seconds
+        greatest(segment.started_at, period_start) as segment_start,
+        least(
+          private.insight_effective_end(
+            segment.started_at,
+            segment.ended_at,
+            session.updated_at,
+            generated_at
+          ),
+          period_end
+        ) as segment_end
       from public.session_segments as segment
       join public.study_sessions as session
         on session.id = segment.session_id
@@ -1278,9 +1517,23 @@ begin
       where segment.user_id = caller_id
         and not session.experiment_mode
         and segment.started_at < period_end
-        and coalesce(segment.ended_at, generated_at) > period_start
-        and least(coalesce(segment.ended_at, generated_at), period_end)
+        and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
+        and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           >= greatest(segment.started_at, period_start) + interval '2 minutes'
+    ), valid_segments as (
+      select segment_start, segment_end
+      from clipped_segments
+      where segment_end >= segment_start + interval '2 minutes'
+    ), canonical_ranges as (
+      select unnest(
+        range_agg(tstzrange(segment_start, segment_end, '[)'))
+      ) as active_range
+      from valid_segments
+    ), canonical_segments as (
+      select floor(
+        extract(epoch from (upper(active_range) - lower(active_range)))
+      )::integer as seconds
+      from canonical_ranges
     ), buckets(id, label, minimum_seconds, maximum_seconds, ordinal) as (
       values
         ('under_15', '2–15 分钟', 120, 900, 1),
@@ -1295,7 +1548,7 @@ begin
         bucket.ordinal,
         count(segment.seconds)::integer as count
       from buckets as bucket
-      left join clipped_segments as segment
+      left join canonical_segments as segment
         on segment.seconds >= bucket.minimum_seconds
        and (
          bucket.maximum_seconds is null
@@ -1348,7 +1601,7 @@ begin
         segment.id as segment_id,
         segment.session_id,
         greatest(segment.started_at, period_start) as segment_start,
-        least(coalesce(segment.ended_at, generated_at), period_end)
+        least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           as segment_end
       from public.session_segments as segment
       join public.study_sessions as session
@@ -1357,71 +1610,9 @@ begin
       where segment.user_id = caller_id
         and not session.experiment_mode
         and segment.started_at < period_end
-        and coalesce(segment.ended_at, generated_at) > period_start
-        and least(coalesce(segment.ended_at, generated_at), period_end)
+        and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
+        and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           >= greatest(segment.started_at, period_start) + interval '2 minutes'
-    ), local_hour_chunks as (
-      -- Split at local-hour boundaries so a segment crossing midnight or a
-      -- morning/afternoon boundary is not attributed wholly to its start time.
-      select
-        segment.segment_id,
-        segment.session_id,
-        local_hour.value as local_hour,
-        floor(
-          extract(
-            epoch from (
-              least(
-                segment.segment_end,
-                (local_hour.value + interval '1 hour')
-                  at time zone selected_timezone
-              )
-              - greatest(
-                segment.segment_start,
-                local_hour.value at time zone selected_timezone
-              )
-            )
-          )
-        )::integer as seconds
-      from clipped_segments as segment
-      cross join lateral pg_catalog.generate_series(
-        pg_catalog.date_trunc(
-          'hour',
-          segment.segment_start at time zone selected_timezone
-        ),
-        pg_catalog.date_trunc(
-          'hour',
-          (segment.segment_end - interval '1 microsecond')
-            at time zone selected_timezone
-        ),
-        interval '1 hour'
-      ) as local_hour(value)
-    ), categorized as (
-      select
-        chunk.segment_id,
-        chunk.session_id,
-        chunk.seconds,
-        session.task_outcome,
-        review.id is not null as reviewed,
-        review.self_rating,
-        case
-          when extract(hour from chunk.local_hour) < 5
-            then 'night'
-          when extract(hour from chunk.local_hour) < 11
-            then 'morning'
-          when extract(hour from chunk.local_hour) < 14
-            then 'midday'
-          when extract(hour from chunk.local_hour) < 18
-            then 'afternoon'
-          else 'evening'
-        end as bucket_id
-      from local_hour_chunks as chunk
-      join public.study_sessions as session
-        on session.id = chunk.session_id
-       and session.user_id = caller_id
-      left join public.reviews as review
-        on review.session_id = chunk.session_id
-       and review.user_id = caller_id
-      where chunk.seconds > 0
     ), bucket_definitions(id, label, ordinal) as (
       values
         ('morning', '早晨 05–11', 1),
@@ -1429,6 +1620,58 @@ begin
         ('afternoon', '下午 14–18', 3),
         ('evening', '晚间 18–24', 4),
         ('night', '凌晨 00–05', 5)
+    ), absolute_bucket_ranges as (
+      select *
+      from private.insight_bucket_ranges(
+        period_start, period_end, selected_timezone
+      )
+    ), absolute_minute_chunks as (
+      select
+        segment.segment_id,
+        segment.session_id,
+        bucket.bucket_id,
+        greatest(segment.segment_start, bucket.bucket_start) as chunk_start,
+        least(segment.segment_end, bucket.bucket_end) as chunk_end
+      from clipped_segments as segment
+      join absolute_bucket_ranges as bucket
+        on bucket.bucket_start < segment.segment_end
+       and bucket.bucket_end > segment.segment_start
+    ), categorized as (
+      select
+        chunk.segment_id,
+        chunk.session_id,
+        chunk.chunk_start,
+        chunk.chunk_end,
+        floor(extract(epoch from (chunk.chunk_end - chunk.chunk_start)))
+          ::integer as seconds,
+        session.task_outcome,
+        review.id is not null as reviewed,
+        review.self_rating,
+        chunk.bucket_id
+      from absolute_minute_chunks as chunk
+      join public.study_sessions as session
+        on session.id = chunk.session_id
+       and session.user_id = caller_id
+      left join public.reviews as review
+        on review.session_id = chunk.session_id
+       and review.user_id = caller_id
+      where chunk.chunk_end > chunk.chunk_start
+    ), bucket_ranges as (
+      select
+        bucket_id,
+        unnest(range_agg(tstzrange(chunk_start, chunk_end, '[)')))
+          as active_range
+      from categorized
+      group by bucket_id
+    ), bucket_duration as (
+      select
+        bucket_id,
+        count(*)::integer as segment_count,
+        coalesce(sum(floor(extract(
+          epoch from (upper(active_range) - lower(active_range))
+        ))), 0)::bigint as actual_seconds
+      from bucket_ranges
+      group by bucket_id
     ), per_session_bucket as (
       select
         session_id,
@@ -1454,8 +1697,8 @@ begin
         definition.id,
         definition.label,
         definition.ordinal,
-        coalesce(sum(segment.segment_count), 0)::integer as segment_count,
-        coalesce(sum(segment.actual_seconds), 0)::bigint as actual_seconds,
+        coalesce(max(duration.segment_count), 0)::integer as segment_count,
+        coalesce(max(duration.actual_seconds), 0)::bigint as actual_seconds,
         count(*) filter (
           where segment.primary_rank = 1 and segment.reviewed
         )::integer as reviewed_count,
@@ -1477,6 +1720,8 @@ begin
       from bucket_definitions as definition
       left join ranked_session_buckets as segment
         on segment.bucket_id = definition.id
+      left join bucket_duration as duration
+        on duration.bucket_id = definition.id
       group by definition.id, definition.label, definition.ordinal
     )
     select coalesce(
@@ -1507,7 +1752,7 @@ begin
       select
         segment.session_id,
         greatest(segment.started_at, period_start) as segment_start,
-        least(coalesce(segment.ended_at, generated_at), period_end)
+        least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           as segment_end
       from public.session_segments as segment
       join public.study_sessions as session
@@ -1516,24 +1761,24 @@ begin
       where segment.user_id = caller_id
         and not session.experiment_mode
         and segment.started_at < period_end
-        and coalesce(segment.ended_at, generated_at) > period_start
-        and least(coalesce(segment.ended_at, generated_at), period_end)
+        and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
+        and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
           >= greatest(segment.started_at, period_start) + interval '2 minutes'
     ), clipped_runs as (
       -- Observation coverage is the intersection with eligible study time.
       -- This prevents a short camera-only fragment from producing evidence
       -- while actual_seconds remains zero.
-      select floor(
-        extract(
-          epoch from (
-            least(
-              coalesce(run.ended_at, generated_at),
-              segment.segment_end
-            )
-            - greatest(run.started_at, segment.segment_start)
-          )
-        )
-      )::integer as seconds
+      select
+        greatest(run.started_at, segment.segment_start) as run_start,
+        least(
+          private.insight_effective_end(
+            run.started_at,
+            run.ended_at,
+            run.last_observed_at,
+            generated_at
+          ),
+          segment.segment_end
+        ) as run_end
       from public.observation_runs as run
       join public.study_sessions as session
         on session.id = run.session_id
@@ -1541,14 +1786,25 @@ begin
       join eligible_segments as segment
         on segment.session_id = run.session_id
        and run.started_at < segment.segment_end
-       and coalesce(run.ended_at, generated_at) > segment.segment_start
+       and private.insight_effective_end(run.started_at, run.ended_at, run.last_observed_at, generated_at) > segment.segment_start
       where run.user_id = caller_id
         and not run.experiment_mode
         and not session.experiment_mode
+    ), valid_runs as (
+      select run_start, run_end
+      from clipped_runs
+      where run_end > run_start
+    ), canonical_runs as (
+      select unnest(
+        range_agg(tstzrange(run_start, run_end, '[)'))
+      ) as observed_range
+      from valid_runs
     )
-    select coalesce(sum(seconds), 0)::bigint
+    select coalesce(sum(floor(extract(
+      epoch from (upper(observed_range) - lower(observed_range))
+    ))), 0)::bigint
     into observed_seconds
-    from clipped_runs;
+    from canonical_runs;
 
     observation_coverage_percent := case
       when actual_seconds = 0 then 0
@@ -1572,12 +1828,12 @@ begin
         where segment.user_id = caller_id
           and segment.session_id = event.session_id
           and segment.started_at < period_end
-          and coalesce(segment.ended_at, generated_at) > period_start
-          and least(coalesce(segment.ended_at, generated_at), period_end)
+          and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
+          and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
             >= greatest(segment.started_at, period_start) + interval '2 minutes'
           and event.started_at >= greatest(segment.started_at, period_start)
           and event.started_at
-            < least(coalesce(segment.ended_at, generated_at), period_end)
+            < least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
       )
       and exists (
         select 1
@@ -1586,7 +1842,7 @@ begin
           and run.session_id = event.session_id
           and not run.experiment_mode
           and event.started_at >= run.started_at
-          and event.started_at < coalesce(run.ended_at, generated_at)
+          and event.started_at < private.insight_effective_end(run.started_at, run.ended_at, run.last_observed_at, generated_at)
       )
       and (
         event.review_status = 'confirmed'
@@ -1627,12 +1883,12 @@ begin
         where segment.user_id = caller_id
           and segment.session_id = reminder.session_id
           and segment.started_at < period_end
-          and coalesce(segment.ended_at, generated_at) > period_start
-          and least(coalesce(segment.ended_at, generated_at), period_end)
+          and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > period_start
+          and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
             >= greatest(segment.started_at, period_start) + interval '2 minutes'
           and reminder.shown_at >= greatest(segment.started_at, period_start)
           and reminder.shown_at
-            < least(coalesce(segment.ended_at, generated_at), period_end)
+            < least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), period_end)
       );
 
     with markers as (
@@ -1644,6 +1900,10 @@ begin
       where marker.user_id = caller_id
         and marker.source = 'manual'
         and marker.event_type = 'manual'
+        and not (
+          marker.review_status = 'corrected'
+          and marker.corrected_type = 'not_relevant'
+        )
         and not session.experiment_mode
         and marker.started_at >= evidence_start
         and marker.started_at < evidence_end
@@ -1653,14 +1913,14 @@ begin
           where segment.user_id = caller_id
             and segment.session_id = marker.session_id
             and segment.started_at < evidence_end
-            and coalesce(segment.ended_at, generated_at) > evidence_start
-            and least(coalesce(segment.ended_at, generated_at), evidence_end)
+            and private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at) > evidence_start
+            and least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), evidence_end)
               >= greatest(segment.started_at, evidence_start)
                 + interval '2 minutes'
             and marker.started_at
               >= greatest(segment.started_at, evidence_start)
             and marker.started_at
-              < least(coalesce(segment.ended_at, generated_at), evidence_end)
+              < least(private.insight_effective_end(segment.started_at, segment.ended_at, session.updated_at, generated_at), evidence_end)
         )
     )
     select
@@ -1669,6 +1929,9 @@ begin
         where exists (
           select 1
           from public.behavior_events as signal
+          join public.study_sessions as signal_session
+            on signal_session.id = signal.session_id
+           and signal_session.user_id = caller_id
           where signal.user_id = caller_id
             and signal.session_id = marker.session_id
             and signal.source = 'vision'
@@ -1680,17 +1943,17 @@ begin
               where signal_segment.user_id = caller_id
                 and signal_segment.session_id = signal.session_id
                 and signal_segment.started_at < evidence_end
-                and coalesce(signal_segment.ended_at, generated_at)
+                and private.insight_effective_end(signal_segment.started_at, signal_segment.ended_at, signal_session.updated_at, generated_at)
                   > evidence_start
                 and least(
-                  coalesce(signal_segment.ended_at, generated_at),
+                  private.insight_effective_end(signal_segment.started_at, signal_segment.ended_at, signal_session.updated_at, generated_at),
                   evidence_end
                 ) >= greatest(signal_segment.started_at, evidence_start)
                   + interval '2 minutes'
                 and signal.started_at
                   >= greatest(signal_segment.started_at, evidence_start)
                 and signal.started_at < least(
-                  coalesce(signal_segment.ended_at, generated_at),
+                  private.insight_effective_end(signal_segment.started_at, signal_segment.ended_at, signal_session.updated_at, generated_at),
                   evidence_end
                 )
             )
@@ -1702,7 +1965,7 @@ begin
                 and not signal_run.experiment_mode
                 and signal.started_at >= signal_run.started_at
                 and signal.started_at
-                  < coalesce(signal_run.ended_at, generated_at)
+                  < private.insight_effective_end(signal_run.started_at, signal_run.ended_at, signal_run.last_observed_at, generated_at)
             )
             and (
               signal.review_status = 'confirmed'
@@ -1728,6 +1991,16 @@ begin
   return jsonb_build_object(
     'enabled', selected_enabled,
     'generated_at', generated_at,
+    'data_coverage', jsonb_build_object(
+      'complete', period_complete,
+      'global_truncated', facts_truncated,
+      'period_complete', period_complete,
+      'recommendation_evidence_complete',
+        recommendation_evidence_complete,
+      'first_truncated_at', first_truncated_at,
+      'last_truncated_at', last_truncated_at,
+      'dropped_counts', fact_dropped_counts
+    ),
     'period', jsonb_build_object(
       'days', p_days,
       'timezone', selected_timezone,

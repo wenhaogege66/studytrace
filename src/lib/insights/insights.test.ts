@@ -11,6 +11,15 @@ function report(overrides: Partial<InsightsReport> = {}): InsightsReport {
   return {
     enabled: true,
     generated_at: "2026-09-07T08:00:00Z",
+    data_coverage: {
+      complete: true,
+      global_truncated: false,
+      period_complete: true,
+      recommendation_evidence_complete: true,
+      first_truncated_at: null,
+      last_truncated_at: null,
+      dropped_counts: {},
+    },
     period: {
       days: 30,
       timezone: "Asia/Shanghai",
@@ -71,6 +80,26 @@ function report(overrides: Partial<InsightsReport> = {}): InsightsReport {
 }
 
 describe("fact-based insights", () => {
+  it("withholds recommendations when fact capture was truncated", () => {
+    const suggestion = buildInsightSuggestion(
+      report({
+        data_coverage: {
+          complete: false,
+          global_truncated: true,
+          period_complete: false,
+          recommendation_evidence_complete: false,
+          first_truncated_at: "2026-09-01T00:00:00Z",
+          last_truncated_at: "2026-09-02T00:00:00Z",
+          dropped_counts: { session_segments: 3 },
+        },
+      }),
+    )
+
+    expect(suggestion.ready).toBe(false)
+    expect(suggestion.focusMinutes).toBeNull()
+    expect(suggestion.title).toContain("未被记录")
+  })
+
   it("parses numeric Postgres JSON values without exposing raw records", () => {
     const parsed = parseInsightsReport({
       ...report(),

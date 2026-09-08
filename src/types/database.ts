@@ -75,11 +75,13 @@ export type Database = {
       }
       observation_runs: {
         Row: {
+          camera_version: number
           created_at: string
           detector_version: string
           ended_at: string | null
           experiment_mode: boolean
           id: string
+          last_observed_at: string
           observation_profile: string
           origin: string
           policy_snapshot: Json
@@ -89,11 +91,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          camera_version?: number
           created_at?: string
           detector_version: string
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
+          last_observed_at?: string
           observation_profile: string
           origin?: string
           policy_snapshot?: Json
@@ -103,11 +107,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          camera_version?: number
           created_at?: string
           detector_version?: string
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
+          last_observed_at?: string
           observation_profile?: string
           origin?: string
           policy_snapshot?: Json
@@ -747,6 +753,14 @@ export type Database = {
       }
       get_my_account_transfer_summary: { Args: never; Returns: Json }
       get_my_insights: { Args: { p_days?: number }; Returns: Json }
+      heartbeat_observation_run: {
+        Args: {
+          p_camera_version: number
+          p_expected_state_version: number
+          p_session_id: string
+        }
+        Returns: string | null
+      }
       pause_study_session: {
         Args: {
           p_accumulated_seconds: number

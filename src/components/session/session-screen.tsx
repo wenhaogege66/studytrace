@@ -59,9 +59,11 @@ import {
   createRunningCheckpoint,
   createTimerState,
   elapsedSeconds,
+  reconcileRunningCheckpoint,
   timerReducer,
   type TimerState,
 } from "@/lib/session/timer"
+import { useCheckpointHeartbeat } from "@/lib/session/use-checkpoint-heartbeat"
 
 const VisionPanel = dynamic(
   () =>
@@ -118,6 +120,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const persistedResumedAtRef = useRef<string | null>(null)
   const stateVersionRef = useRef(0)
   const cameraVersionRef = useRef(0)
+  const checkpointInFlightRef = useRef(false)
+  const interruptionNotifiedRef = useRef(false)
   const screenMountedRef = useRef(false)
   const pauseSessionRef = useRef(sessionMutations.pause.mutateAsync)
   const terminalNavigationRef = useRef(false)
@@ -145,7 +149,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       cameraVersionRef.current,
       sessionQuery.data.camera_version,
     )
-    dispatch({ type: "restore", state: createTimerState(sessionQuery.data) })
+    const restoredTimer = createTimerState(sessionQuery.data)
+    timerRef.current = restoredTimer
+    dispatch({ type: "restore", state: restoredTimer })
   }, [sessionQuery.data])
 
   useEffect(() => {
@@ -157,41 +163,59 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     return () => clearInterval(interval)
   }, [timer?.mode])
 
-  useEffect(() => {
-    const persist = () => {
+  useCheckpointHeartbeat(
+    async () => {
       const current = timerRef.current
       if (
-        document.visibilityState !== "hidden" ||
         !current ||
-        current.mode !== "running"
+        current.mode !== "running" ||
+        checkpointInFlightRef.current
       )
         return
-      const now = Date.now()
-      const checkpoint = createRunningCheckpoint(current, now)
+      const checkpoint = createRunningCheckpoint(current, Date.now())
       const expectedResumedAt = persistedResumedAtRef.current
       if (!checkpoint || !expectedResumedAt) return
-      void sessionMutations.checkpoint
-        .mutateAsync({
+      checkpointInFlightRef.current = true
+      try {
+        const saved = await sessionMutations.checkpoint.mutateAsync({
           sessionId,
           expectedResumedAt,
           accumulatedSeconds: checkpoint.accumulatedSeconds,
           checkpointedAt: checkpoint.resumedAt,
         })
-        .then((saved) => {
-          if (saved.state_version < stateVersionRef.current) return
-          stateVersionRef.current = saved.state_version
-          cameraVersionRef.current = Math.max(
-            cameraVersionRef.current,
-            saved.camera_version,
+        if (saved.state_version < stateVersionRef.current) return
+        stateVersionRef.current = saved.state_version
+        cameraVersionRef.current = Math.max(
+          cameraVersionRef.current,
+          saved.camera_version,
+        )
+        if (saved.status === "running" && saved.resumed_at) {
+          persistedResumedAtRef.current = saved.resumed_at
+          const reconciled = reconcileRunningCheckpoint(
+            saved,
+            checkpoint.accumulatedSeconds,
           )
-          if (saved.status === "running" && saved.resumed_at)
-            persistedResumedAtRef.current = saved.resumed_at
-        })
-        .catch(() => undefined)
-    }
-    document.addEventListener("visibilitychange", persist)
-    return () => document.removeEventListener("visibilitychange", persist)
-  }, [sessionId, sessionMutations.checkpoint])
+          timerRef.current = reconciled.state
+          dispatch({ type: "restore", state: reconciled.state })
+          if (reconciled.interrupted && !interruptionNotifiedRef.current) {
+            interruptionNotifiedRef.current = true
+            toast.info("已从当前继续计时", {
+              description: "检测到较长中断，离线时段没有计入学习时长。",
+            })
+          }
+        }
+      } catch {
+        // A missed checkpoint only makes aggregate evidence lag; it must never
+        // interrupt or reset the local timer.
+      } finally {
+        checkpointInFlightRef.current = false
+      }
+    },
+    {
+      enabled: sessionQuery.data?.status === "running",
+      runImmediately: true,
+    },
+  )
 
   useEffect(() => {
     if (!sessionQuery.data?.user_id) return
@@ -433,7 +457,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         startedAt: new Date(now).toISOString(),
         endedAt: new Date(now + 1_000).toISOString(),
       })
-      toast.success("已添加一条手动标记")
+      toast.success("已记录一次偏离，仅用于你的共现统计")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "标记失败")
     }
@@ -480,10 +504,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             {task.title}
           </h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void addManualEvent()}>
-            <Plus /> 手动标记
-          </Button>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex flex-col gap-1 sm:items-end">
+            <Button variant="outline" onClick={() => void addManualEvent()}>
+              <Plus /> 标记刚才偏离了任务
+            </Button>
+            <p className="text-xs text-slate-500">仅用于你的个人共现统计</p>
+          </div>
           {allStepsCompleted ? (
             <Button
               onClick={() => setFinishDialogOpen(true)}
@@ -643,6 +670,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             experimentMode={session.experiment_mode}
             observationProfile={session.observation_profile}
             settings={settingsQuery.data}
+            onObservationHeartbeat={async () => {
+              await sessionMutations.observationHeartbeat.mutateAsync({
+                sessionId,
+                expectedStateVersion: stateVersionRef.current,
+                cameraVersion: cameraVersionRef.current,
+              })
+            }}
             onCameraStateChange={async (enabled) => {
               const cameraVersion = cameraVersionRef.current + 1
               cameraVersionRef.current = cameraVersion

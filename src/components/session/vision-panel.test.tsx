@@ -61,9 +61,13 @@ const originalMediaDevices = Object.getOwnPropertyDescriptor(
   "mediaDevices",
 )
 
-function renderPanel(onCameraStateChange = vi.fn()) {
+function renderPanel(
+  onCameraStateChange = vi.fn(),
+  onObservationHeartbeat = vi.fn(),
+) {
   render(
     <VisionPanel
+      onObservationHeartbeat={onObservationHeartbeat}
       sessionId="session-1"
       paused={false}
       experimentMode={false}
@@ -106,6 +110,20 @@ describe("VisionPanel model initialization cleanup", () => {
     if (originalMediaDevices)
       Object.defineProperty(navigator, "mediaDevices", originalMediaDevices)
     else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices
+  })
+
+  it("confirms an active local observation every 60 seconds", async () => {
+    const heartbeat = vi.fn().mockResolvedValue(undefined)
+    renderPanel(vi.fn(), heartbeat)
+
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    await act(async () => {})
+    await act(async () => TestWorker.instances[0].emit({ type: "ready" }))
+    await act(async () => {})
+
+    expect(heartbeat).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTime(60_000))
+    expect(heartbeat).toHaveBeenCalledOnce()
   })
 
   it("lets the user cancel while the local model is loading", async () => {
@@ -327,6 +345,7 @@ describe("VisionPanel model initialization cleanup", () => {
   it("closes an active event only once when pausing triggers repeated renders", async () => {
     const { rerender } = render(
       <VisionPanel
+        onObservationHeartbeat={() => undefined}
         sessionId="session-1"
         paused={false}
         experimentMode={false}
@@ -370,6 +389,7 @@ describe("VisionPanel model initialization cleanup", () => {
 
     const pausedPanel = (
       <VisionPanel
+        onObservationHeartbeat={() => undefined}
         sessionId="session-1"
         paused
         experimentMode={false}

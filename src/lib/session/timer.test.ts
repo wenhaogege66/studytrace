@@ -5,6 +5,7 @@ import {
   createRunningCheckpoint,
   createTimerState,
   elapsedSeconds,
+  reconcileRunningCheckpoint,
   timerReducer,
 } from "@/lib/session/timer"
 
@@ -81,6 +82,25 @@ describe("study timer", () => {
     expect(nextCheckpoint).toEqual({
       accumulatedSeconds: 195,
       resumedAt: "2026-08-03T00:11:15.000Z",
+    })
+  })
+
+  it("rebases a stale checkpoint so the next heartbeat cannot refill an offline gap", () => {
+    const reconnectedAt = new Date("2026-08-03T01:10:00Z").getTime()
+    const saved = session({
+      accumulated_seconds: 120,
+      resumed_at: new Date(reconnectedAt).toISOString(),
+      updated_at: new Date(reconnectedAt).toISOString(),
+    })
+    const reconciled = reconcileRunningCheckpoint(saved, 3_720, reconnectedAt)
+
+    expect(reconciled.interrupted).toBe(true)
+    expect(reconciled.state.displaySeconds).toBe(120)
+    expect(
+      createRunningCheckpoint(reconciled.state, reconnectedAt + 60_000),
+    ).toEqual({
+      accumulatedSeconds: 180,
+      resumedAt: "2026-08-03T01:11:00.000Z",
     })
   })
 

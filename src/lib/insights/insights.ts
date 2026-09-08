@@ -28,6 +28,15 @@ const timeBucketSchema = z.object({
 export const insightsReportSchema = z.object({
   enabled: z.boolean(),
   generated_at: z.string(),
+  data_coverage: z.object({
+    complete: z.boolean(),
+    global_truncated: z.boolean(),
+    period_complete: z.boolean(),
+    recommendation_evidence_complete: z.boolean(),
+    first_truncated_at: z.string().nullable(),
+    last_truncated_at: z.string().nullable(),
+    dropped_counts: z.record(z.string(), nonnegativeNumber),
+  }),
   period: z.object({
     days: z.union([z.literal(7), z.literal(30)]),
     timezone: z.string().min(1),
@@ -136,6 +145,20 @@ export function buildInsightSuggestion(
   const precursorStatement = report.readiness.precursor_ready
     ? `近 ${report.precursor.evidence_window_days} 天 ${report.precursor.manual_marker_count} 次主动标记中，有 ${report.precursor.correlated_marker_count} 次在此前 5 分钟出现了经你确认的画面变化（${Math.round(report.precursor.correlated_percent)}%）。这是共现记录，不代表因果或能力判断。`
     : null
+
+  if (!report.data_coverage.recommendation_evidence_complete) {
+    return {
+      ready: false,
+      progressPercent,
+      title: "部分历史未被记录，暂不生成建议",
+      detail:
+        "事实记录曾达到安全容量上限。当前汇总仍可查看，但可能不完整，因此不会据此推荐工作—休息区间或高效时段。清理旧记录不会补回已经跳过的事实。",
+      focusMinutes: null,
+      restMinutes: null,
+      bestTimeBucket: null,
+      precursorStatement: null,
+    }
+  }
 
   if (!report.readiness.patterns_ready) {
     const missingSegments = Math.max(

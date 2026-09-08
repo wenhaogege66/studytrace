@@ -442,6 +442,20 @@ export async function checkpointRunningSession(
   return mapSession(data)
 }
 
+export async function heartbeatObservationRun(
+  sessionId: string,
+  expectedStateVersion: number,
+  cameraVersion: number,
+): Promise<string | null> {
+  const { data, error } = await getSupabase().rpc("heartbeat_observation_run", {
+    p_session_id: sessionId,
+    p_expected_state_version: expectedStateVersion,
+    p_camera_version: cameraVersion,
+  })
+  if (error) fail("确认本地观察状态失败", error)
+  return data
+}
+
 export async function pauseRunningSessionForNavigation(
   userId: string,
   sessionId: string,

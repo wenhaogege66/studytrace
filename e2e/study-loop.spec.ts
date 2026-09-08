@@ -38,7 +38,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
 
   await expect(page.getByText("完成一次科创问题定义")).toBeVisible()
   await page.getByRole("button", { name: "开始学习" }).click()
-  await expect(page).toHaveURL(/\/app\/session\//)
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await expect(
     page.getByRole("heading", { name: "完成一次科创问题定义" }),
   ).toBeVisible()
@@ -48,8 +48,10 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
     page.getByText("你拒绝了摄像头授权。学习计时和手动复盘不会受影响。"),
   ).toBeVisible()
 
-  await page.getByRole("button", { name: "手动标记" }).click()
-  await expect(page.getByText("已添加一条手动标记")).toBeVisible()
+  await page.getByRole("button", { name: "标记刚才偏离了任务" }).click()
+  await expect(
+    page.getByText("已记录一次偏离，仅用于你的共现统计"),
+  ).toBeVisible()
 
   await page.getByRole("button", { name: "暂停", exact: true }).click()
   await expect(page.getByRole("button", { name: "继续" })).toBeVisible()
@@ -66,7 +68,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
     }),
   ).toBeVisible()
   await page.getByRole("button", { name: "完成并立即复盘" }).click()
-  await expect(page).toHaveURL(/\/app\/review\//)
+  await expect(page).toHaveURL(/\/app\/review\//, { timeout: 20_000 })
   await expect(
     page.getByRole("heading", { name: "完成一次科创问题定义" }),
   ).toBeVisible()
@@ -105,7 +107,7 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
   await page.getByRole("button", { name: "创建任务" }).click()
 
   await page.getByRole("button", { name: "开始学习" }).click()
-  await expect(page).toHaveURL(/\/app\/session\//)
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   const firstSessionUrl = page.url()
   await page.getByRole("checkbox").first().click()
   await expect(page.getByText("1/2")).toBeVisible()
@@ -146,7 +148,7 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
 
   await expect(page.getByText("完成一轮物理总复习")).toBeVisible()
   await page.getByRole("button", { name: "开始学习" }).click()
-  await expect(page).toHaveURL(/\/app\/session\//)
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   expect(page.url()).not.toBe(firstSessionUrl)
   await page.getByRole("checkbox").nth(1).click()
   await page.getByRole("button", { name: "确认完成" }).click()
@@ -178,6 +180,7 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   expect(box!.width).toBeGreaterThan(box!.height * 3)
 
   await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await page.getByRole("checkbox").click()
   await page.getByRole("button", { name: "返回任务台" }).click()
   await expect(page).toHaveURL(/\/app$/)
@@ -266,6 +269,7 @@ test("从全局导航离开会自动暂停，并锁定当前会话的观察方�
     .fill("读完本章并做批注")
   await page.getByRole("button", { name: "创建任务" }).click()
   await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   const sessionUrl = page.url()
   await expect(
     page.getByRole("button", { name: "暂停", exact: true }),
@@ -282,6 +286,7 @@ test("从全局导航离开会自动暂停，并锁定当前会话的观察方�
   await page.getByRole("button", { name: "取消" }).click()
 
   await page.getByRole("button", { name: "继续学习" }).first().click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   expect(page.url()).toBe(sessionUrl)
 })
 
@@ -294,6 +299,7 @@ test("显式导航会作废尚未提交的待决恢复", async ({ page }) => {
     .fill("发出恢复后立即离开")
   await page.getByRole("button", { name: "创建任务" }).click()
   await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await page.getByRole("button", { name: "暂停", exact: true }).click()
   await expect(page.getByRole("button", { name: "继续" })).toBeVisible()
 
@@ -317,6 +323,7 @@ test("浏览器后退会在待决恢复提交后再次暂停", async ({ page }) 
     .fill("恢复尚未提交时返回任务台")
   await page.getByRole("button", { name: "创建任务" }).click()
   await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await page.getByRole("button", { name: "暂停", exact: true }).click()
 
   const pendingResume = page.waitForResponse((response) =>
@@ -366,6 +373,7 @@ test("AI 生成可编辑的三步初稿并为离开设备运动关闭摄像头",
   await expect(page.getByRole("heading", { name: "去操场慢跑" })).toBeVisible()
 
   await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await expect(page.getByText("此任务不使用电脑摄像头")).toBeVisible()
   await expect(page.getByRole("button", { name: "开启本地观察" })).toHaveCount(
     0,

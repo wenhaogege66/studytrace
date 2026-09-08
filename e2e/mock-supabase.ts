@@ -33,6 +33,7 @@ type MockSupabaseOptions = {
   }
   seedRunningStudySession?: boolean
   insightsReport?: Row
+  insightsTruncated?: boolean
   accountSummary?: Partial<{
     tasks: number
     sessions: number
@@ -1010,6 +1011,17 @@ export async function installMockSupabase(
       const report = options.insightsReport ?? {
         enabled: true,
         generated_at: now(),
+        data_coverage: {
+          complete: !options.insightsTruncated,
+          global_truncated: Boolean(options.insightsTruncated),
+          period_complete: !options.insightsTruncated,
+          recommendation_evidence_complete: !options.insightsTruncated,
+          first_truncated_at: options.insightsTruncated ? now() : null,
+          last_truncated_at: options.insightsTruncated ? now() : null,
+          dropped_counts: options.insightsTruncated
+            ? { session_segments: 1 }
+            : {},
+        },
         overview: {
           active_days: 0,
           completed_tasks: 0,

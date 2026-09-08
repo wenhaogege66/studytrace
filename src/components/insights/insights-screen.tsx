@@ -10,6 +10,7 @@ import {
   MapPin,
   RefreshCw,
   Sparkles,
+  TriangleAlert,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -263,12 +264,29 @@ export function InsightsScreen() {
         </div>
       </header>
 
+      {!report.data_coverage.period_complete ||
+      !report.data_coverage.recommendation_evidence_complete ? (
+        <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+          <TriangleAlert />
+          <AlertTitle>
+            {report.data_coverage.period_complete
+              ? "30 天建议证据池包含不完整区间"
+              : "这份汇总包含不完整的历史区间"}
+          </AlertTitle>
+          <AlertDescription className="mt-2 leading-6">
+            {report.data_coverage.period_complete
+              ? "当前查看窗口的数据完整，但形成建议所用的近 30 天证据池曾达到数据库安全容量上限。当前汇总仍可回看，本轮不会生成个性化规律建议。"
+              : "当前查看窗口内的派生事实曾达到数据库安全容量上限，部分新事实被跳过。数字仍可用于回看，但不会生成个性化规律建议；删除旧数据也无法补回当时未记录的事实。"}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {!report.enabled ? (
         <Alert className="border-indigo-200 bg-white">
           <Sparkles />
           <AlertTitle>长期洞察已关闭</AlertTitle>
           <AlertDescription className="mt-2">
-            已有任务和复盘不会被删除。开启后，只在记录达到最低样本量时生成事实型建议。
+            已有事实记录会保留；关闭期间不会采集投入段、观察区间或任务步骤历史。重新开启后只从当下继续，不回填关闭区间。
             <Button
               className="mt-4"
               onClick={() => void savePreferences(true)}
@@ -460,7 +478,7 @@ export function InsightsScreen() {
               统计时区：{report.period.timezone}
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              按本地自然日划分活跃天数与时段。关闭洞察不会删除原始记录。
+              修改时区会用新时区重新解释全部既有记录。跨时段会话的复盘与结果归到实际投入最长的时段；步骤改名前后的标题会保留在事实历史中。关闭洞察会立即封口并停止采集，但不会删除已有事实。
             </p>
           </div>
         </div>

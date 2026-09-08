@@ -66,6 +66,7 @@ export function VisionPanel({
   experimentMode,
   observationProfile,
   settings,
+  onObservationHeartbeat,
   onCameraStateChange,
 }: {
   sessionId: string
@@ -84,6 +85,7 @@ export function VisionPanel({
     pitch_threshold_degrees: number
     reminders_enabled: boolean
   }
+  onObservationHeartbeat: () => Promise<void> | void
   onCameraStateChange: (enabled: boolean) => Promise<void> | void
 }) {
   const profile = getObservationProfile(observationProfile)
@@ -108,6 +110,11 @@ export function VisionPanel({
   const effectsQueueRef = useRef<Promise<void>>(Promise.resolve())
   const mountedRef = useRef(true)
   const stoppingRef = useRef(false)
+  const observationHeartbeatRef = useRef(onObservationHeartbeat)
+
+  useEffect(() => {
+    observationHeartbeatRef.current = onObservationHeartbeat
+  }, [onObservationHeartbeat])
 
   const thresholds: VisionThresholds = useMemo(
     () =>
@@ -590,6 +597,19 @@ export function VisionPanel({
   useEffect(() => {
     if (paused && phase !== "idle" && phase !== "error") void stop()
   }, [paused, phase, stop])
+
+  useEffect(() => {
+    if (phase !== "calibrating" && phase !== "observing") return
+    const heartbeat = setInterval(() => {
+      // This is a server-confirmed upper bound for observation coverage, not a
+      // telemetry stream. A transient failure simply leaves the report behind
+      // by at most the last successful checkpoint.
+      void Promise.resolve(observationHeartbeatRef.current()).catch(
+        () => undefined,
+      )
+    }, 60_000)
+    return () => clearInterval(heartbeat)
+  }, [phase])
 
   useEffect(() => {
     mountedRef.current = true

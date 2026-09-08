@@ -19,6 +19,15 @@ test("长期洞察在样本不足时展示事实与收集缺口", async ({ page 
     insightsReport: {
       enabled: true,
       generated_at: "2026-09-08T08:00:00.000Z",
+      data_coverage: {
+        complete: true,
+        global_truncated: false,
+        period_complete: true,
+        recommendation_evidence_complete: true,
+        first_truncated_at: null,
+        last_truncated_at: null,
+        dropped_counts: {},
+      },
       overview: {
         active_days: 3,
         completed_tasks: 1,
@@ -96,6 +105,15 @@ test("长期洞察展示可追溯的完成、观察与提醒事实", async ({ pa
     insightsReport: {
       enabled: true,
       generated_at: "2026-09-08T08:00:00.000Z",
+      data_coverage: {
+        complete: true,
+        global_truncated: false,
+        period_complete: true,
+        recommendation_evidence_complete: true,
+        first_truncated_at: null,
+        last_truncated_at: null,
+        dropped_counts: {},
+      },
       overview: {
         active_days: 12,
         completed_tasks: 4,
@@ -165,4 +183,12 @@ test("长期洞察展示可追溯的完成、观察与提醒事实", async ({ pa
 
   await page.getByRole("button", { name: "近 7 天" }).click()
   await expect(page.getByText("当前 7 天窗口")).toBeVisible()
+})
+
+test("事实记录被截断时明确提示且不生成个性化建议", async ({ page }) => {
+  await installMockSupabase(page, { insightsTruncated: true })
+  await page.goto("/app/insights")
+
+  await expect(page.getByText("这份汇总包含不完整的历史区间")).toBeVisible()
+  await expect(page.getByText("部分历史未被记录，暂不生成建议")).toBeVisible()
 })

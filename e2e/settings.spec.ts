@@ -16,6 +16,6 @@ test("用户可以关闭轻提醒并永久清除自己的业务数据", async ({
   await page.getByRole("tab", { name: "清除数据" }).click()
   await page.getByRole("button", { name: "清除我的全部数据" }).click()
   await page.getByRole("button", { name: "永久清除" }).click()
-  await expect(page).toHaveURL(/\/app$/)
   await expect(page.getByText("全部业务数据已清除")).toBeVisible()
+  await expect(page).toHaveURL(/\/app$/)
 })
