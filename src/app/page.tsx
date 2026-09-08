@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BookOpenCheck,
   BrainCircuit,
+  ChartNoAxesCombined,
   CheckCircle2,
   CircleDotDashed,
   Clock3,
@@ -34,21 +35,27 @@ type Feature = {
 const loop: Feature[] = [
   {
     icon: ListChecks,
-    title: "学习前 · 把任务变具体",
+    title: "设计任务 · AI 先拆出第一版",
     description:
-      "写明目标、拆成可执行步骤，标记优先级与预计时长，减少“知道要学但不知从哪开始”。",
+      "说清目标后，由 AI 生成可编辑的步骤初稿；你再调整顺序、优先级与预计时长。",
   },
   {
     icon: Clock3,
-    title: "学习中 · 计时与轻观察",
+    title: "持续执行 · 分多次推进",
     description:
-      "稳定计时；摄像头可选开启。模型只在浏览器本地观察“未在画面”或“头部方向明显变化”。",
+      "一个大任务可以跨多次执行会话继续。计时稳定保留，摄像头观察与轻提醒完全可选。",
   },
   {
     icon: RefreshCcw,
-    title: "学习后 · 做一次可行动复盘",
+    title: "回看过程 · 每次都可复盘",
     description:
-      "对照预计与实际时长，确认或修正事件，写下未完成原因和下一次只改一件事。",
+      "每次结束后都可确认或修正客观事件，写下下一次调整；暂时不复盘也不阻断任务推进。",
+  },
+  {
+    icon: ChartNoAxesCombined,
+    title: "积累规律 · 样本足够再建议",
+    description:
+      "近 30 天至少积累 20 个有效投入片段和 10 个活跃日，才给出工作—休息区间与较适合时段；不足时只显示收集进度。",
   },
 ]
 
@@ -99,7 +106,7 @@ export default function Home() {
             aria-label="页面章节"
           >
             <a href="#loop" className="hover:text-indigo-700">
-              学习闭环
+              执行闭环
             </a>
             <a href="#technology" className="hover:text-indigo-700">
               技术架构
@@ -128,12 +135,12 @@ export default function Home() {
               <Sparkles className="size-3.5" /> StudyTrace v0.2 · 可运行产品
             </Badge>
             <h1 className="max-w-4xl text-5xl leading-[1.06] font-semibold tracking-[-0.04em] text-balance text-slate-950 sm:text-6xl lg:text-7xl">
-              让一次学习，留下可以调整的
+              让每一次行动，留下可以调整的
               <span className="text-indigo-700">迹</span>。
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-pretty text-slate-600 sm:text-xl">
-              学迹 StudyTrace 是一个面向自律执行的隐私优先工具。它把任务设计、AI
-              拆解、多次执行、本地视频观察、单次复盘与长期规律连成闭环。
+              学迹 StudyTrace 不是普通待办或监考工具。它把任务设计、AI
+              拆解、多次执行、本地过程观察、单次复盘与长期规律连成一条自律执行闭环。
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button size="lg" className="h-11 px-5" asChild>
@@ -167,7 +174,7 @@ export default function Home() {
               </span>
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-emerald-600" />{" "}
-                失败仍可完整复盘
+                样本足够才形成建议
               </span>
             </div>
           </div>
@@ -179,7 +186,7 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-medium tracking-[0.14em] text-indigo-700 uppercase">
-                      Now learning
+                      In progress / 正在执行
                     </p>
                     <h2 className="mt-1 font-semibold text-slate-950">
                       完成光合作用实验复盘
@@ -229,19 +236,19 @@ export default function Home() {
           <div>
             <p className="section-kicker">Problem / 问题背景</p>
             <h2 className="text-3xl font-semibold tracking-tight text-balance text-slate-950 sm:text-4xl">
-              学习记录常常只留下“做了多久”，却没有留下“下一次怎么更好”。
+              自律不只需要一张计划表，还需要看见自己怎样执行、下一次改什么。
             </h2>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             {[
-              ["目标模糊", "任务停在“复习”“写作业”，真正的第一步仍不明确。"],
+              ["目标模糊", "任务停在“复习”“锻炼”，真正的第一步仍不明确。"],
               [
                 "过程不可见",
-                "计时器知道时长，却不知道中途何时离开、何时需要回到任务。",
+                "计时器知道总时长，却很难说明任务如何被分段推进、何时需要调整。",
               ],
               [
                 "复盘无抓手",
-                "只凭印象评价“今天不专注”，很难形成可验证的调整。",
+                "只凭印象评价自己，很难把一次经验积累成可验证的个人规律。",
               ],
             ].map(([title, description], index) => (
               <Card
@@ -265,39 +272,47 @@ export default function Home() {
 
       <section id="loop" className="content-auto px-5 py-24">
         <div className="mx-auto w-full max-w-7xl">
-          <p className="section-kicker">Closed loop / 学习闭环</p>
+          <p className="section-kicker">Closed loop / 自律执行闭环</p>
           <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <h2 className="max-w-3xl text-3xl font-semibold tracking-tight text-balance text-slate-950 sm:text-4xl">
-              把“计划—执行—调整”做成一条完整路径。
+              从一个目标开始，逐步形成自己的行动依据。
             </h2>
             <p className="max-w-md text-sm leading-6 text-slate-600">
-              视觉观察不是产品中心，只是学习中段的一种可选数据来源；没有摄像头，闭环依然完整。
+              视频观察只是一种可选的客观信号；没有摄像头，任务、执行、复盘与长期记录依然完整。
             </p>
           </div>
-          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+          <ol className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-indigo-100 bg-indigo-100 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
             {loop.map(({ icon: Icon, title, description }, index) => (
-              <Card
+              <li
                 key={title}
-                className="group relative overflow-hidden border-indigo-100 bg-white/85 shadow-sm transition-transform hover:-translate-y-1"
+                className="relative bg-white/95 p-5 sm:min-h-56 sm:p-6 lg:min-h-64"
               >
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-600 via-indigo-400 to-emerald-400 opacity-70" />
-                <CardHeader>
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="grid size-11 place-items-center rounded-2xl bg-indigo-50 text-indigo-700">
-                      <Icon className="size-5" />
-                    </span>
-                    <span className="font-mono text-sm text-slate-300">
-                      0{index + 1}
-                    </span>
-                  </div>
-                  <CardTitle>{title}</CardTitle>
-                </CardHeader>
-                <CardContent className="leading-7 text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-700">
+                    <Icon className="size-5" />
+                  </span>
+                  <span className="font-mono text-xs tracking-wider text-indigo-400">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                </div>
+                <h3 className="mt-5 text-lg font-semibold text-slate-950 sm:mt-7">
+                  {title}
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
                   {description}
-                </CardContent>
-              </Card>
+                </p>
+                {index < loop.length - 1 ? (
+                  <ArrowRight className="absolute right-[-0.75rem] bottom-6 z-10 hidden size-6 rounded-full bg-white p-1 text-indigo-300 shadow-sm ring-1 ring-indigo-100 lg:block" />
+                ) : null}
+              </li>
             ))}
-          </div>
+          </ol>
+          <p className="mt-5 flex max-w-4xl items-start gap-2 text-sm leading-6 text-slate-600">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" />
+            少于 2
+            分钟的碎片段、模拟数据和未经确认的视觉事件不参与规律判断；“前置信号”至少需要
+            10 次用户主动标记。
+          </p>
         </div>
       </section>
 
@@ -442,15 +457,15 @@ export default function Home() {
         <div className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] bg-indigo-700 px-6 py-12 text-center text-white shadow-2xl shadow-indigo-950/20 sm:px-12 sm:py-16">
           <BrainCircuit className="mx-auto size-9 text-emerald-300" />
           <h2 className="mx-auto mt-5 max-w-3xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            现在就完成一轮真实学习闭环。
+            从一个真实任务开始，留下第一条行动记录。
           </h2>
           <p className="mx-auto mt-4 max-w-2xl leading-7 text-indigo-100">
-            创建匿名会话，自己建任务或主动载入示例数据。摄像头拒绝、模型失败或移动设备上，都可以继续计时与手动复盘。
+            无需注册即可设计任务、分次执行并选择是否复盘。记录积累到最低样本量后，再查看只属于你的事实型规律。
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Button size="lg" variant="secondary" asChild>
               <Link href="/app">
-                开始体验 <ArrowRight />
+                开始一次执行 <ArrowRight />
               </Link>
             </Button>
             <Button
@@ -473,7 +488,7 @@ export default function Home() {
 
       <footer className="border-t border-indigo-100 bg-white/70 px-5 py-8">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>学迹 StudyTrace · 隐私优先的学习辅助实验产品</p>
+          <p>学迹 StudyTrace · 隐私优先的自律执行工具</p>
           <div className="flex items-center gap-4">
             <a
               href="https://nextjs.org/docs/app"
