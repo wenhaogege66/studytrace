@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test"
+import { readFile } from "node:fs/promises"
 
 import { installMockSupabase } from "./mock-supabase"
+import { createManualPlan } from "./plan-actions"
 
 test.describe.configure({ mode: "serial" })
 
@@ -9,7 +11,7 @@ test("长期洞察对空样本说明收集门槛", async ({ page }) => {
   await page.goto("/app/insights")
 
   await expect(
-    page.getByRole("heading", { name: "你实际是怎么投入时间的" }),
+    page.getByRole("heading", { name: "学习报告", level: 1, exact: true }),
   ).toBeVisible()
   await expect(page.getByText("当前窗口还没有有效投入片段")).toBeVisible()
   await expect(page.getByText("先继续记录，不急着下结论")).toBeVisible()
@@ -232,15 +234,37 @@ test("移动端洞察与任务主操作保持紧凑且可触达", async ({ page 
   }
 
   await page.goto("/app")
-  await page.getByRole("button", { name: "新建任务" }).first().click()
-  await page.getByLabel("任务标题").fill("验证移动端任务操作")
-  await page
-    .getByRole("textbox", { name: "步骤 1", exact: true })
-    .fill("完成一次触控验收")
-  await page.getByRole("button", { name: "创建任务" }).click()
+  await createManualPlan(page, "验证移动端任务操作", ["完成一次触控验收"])
 
   for (const label of ["开始学习", "待完成 1", "已完成 0", "已归档 0"]) {
     const box = await page.getByRole("button", { name: label }).boundingBox()
     expect(box?.height).toBeGreaterThanOrEqual(44)
   }
+})
+
+test("JSON 与 CSV 导出包含实际采用的学习计划和修订记录", async ({ page }) => {
+  await installMockSupabase(page)
+  await page.goto("/app")
+  await createManualPlan(page, "验证完整数据导出", ["核对计划和版本"])
+  await page.goto("/app/insights")
+  const jsonDownload = page.waitForEvent("download")
+  await page.getByRole("button", { name: "JSON 记录", exact: true }).click()
+  const jsonFile = await jsonDownload
+  const jsonPath = await jsonFile.path()
+  expect(jsonPath).not.toBeNull()
+  const exported = JSON.parse(await readFile(jsonPath!, "utf8"))
+  expect(exported.tables.tasks[0].title).toBe("验证完整数据导出")
+  expect(
+    exported.tables.task_plan_revisions.some(
+      (revision: { kind: string }) => revision.kind === "adopted",
+    ),
+  ).toBe(true)
+  const csvDownload = page.waitForEvent("download")
+  await page.getByRole("button", { name: "CSV 记录", exact: true }).click()
+  const csvFile = await csvDownload
+  const csvPath = await csvFile.path()
+  expect(csvPath).not.toBeNull()
+  const csv = await readFile(csvPath!, "utf8")
+  expect(csv).toContain("验证完整数据导出")
+  expect(csv).toContain("task_plan_revisions")
 })

@@ -10,20 +10,24 @@ test("公开首页清楚说明价值与隐私边界", async ({ page }) => {
     }),
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "设计任务 · AI 先拆出第一版" }),
+    page.getByRole("heading", { name: "学习计划 · 先明确目的与标准" }),
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "持续执行 · 分多次推进" }),
+    page.getByRole("heading", { name: "本次学习 · 分多次推进" }),
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "回看过程 · 每次都可复盘" }),
+    page.getByRole("heading", { name: "学习复盘 · 校正过程线索" }),
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "积累规律 · 样本足够再建议" }),
+    page.getByRole("heading", { name: "学习报告 · 结论有真实依据" }),
   ).toBeVisible()
-  await expect(page.getByText(/20 个有效投入片段和 10 个活跃日/)).toBeVisible()
+  await expect(
+    page.getByText(/20 个有效(?:投入)?片段和 10 个活跃日/).first(),
+  ).toBeVisible()
   await expect(page.getByText(/至少需要 10 次用户主动标记/)).toBeVisible()
-  await expect(page.getByText("画面不离开设备", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("本地优先，云端需另行同意", { exact: true }),
+  ).toBeVisible()
   await expect(page.getByText("不做专注分数", { exact: true })).toBeVisible()
   await expect(
     page.getByRole("link", { name: "进入真实体验" }),

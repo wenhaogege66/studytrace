@@ -30,7 +30,7 @@ test("示例数据必须由用户主动载入", async ({ page }) => {
   await page.goto("/app")
 
   const emptyTaskCard = page
-    .getByRole("heading", { name: "任务台还是空的" })
+    .getByRole("heading", { name: "学习计划还是空的" })
     .locator("..")
   await emptyTaskCard.getByRole("button", { name: "载入示例" }).click()
 

@@ -327,6 +327,10 @@ export async function installMockSupabase(
   const behaviorEvents: Row[] = []
   const reminders: Row[] = []
   const reviews: Row[] = []
+  const planRevisions: Row[] = []
+  const aiReports: Row[] = []
+  const consents = new Map<string, Row>()
+  const planSaves = new Map<string, { payload: string; taskId: string }>()
 
   if (options.seedRunningStudySession && currentUser) {
     const timestamp = now()
@@ -718,6 +722,264 @@ export async function installMockSupabase(
       return
     }
 
+    if (url.pathname === "/rest/v1/rpc/get_my_consents") {
+      const actor = userForRequest(request)
+      await fulfillJson(
+        route,
+        actor ? (consents.get(String(actor.id)) ?? {}) : {},
+      )
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/set_my_consent") {
+      const actor = userForRequest(request)
+      const body = (request.postDataJSON() ?? {}) as Row
+      if (
+        !actor ||
+        (body.p_feature === "weekly_reports" &&
+          (actor.is_anonymous ||
+            !(consents.get(String(actor.id))?.ai_reports as Row | undefined)
+              ?.granted))
+      ) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Consent requirements not met" },
+          403,
+        )
+        return
+      }
+      const records = consents.get(String(actor.id)) ?? {}
+      records[String(body.p_feature)] = {
+        granted: body.p_granted === true,
+        version: String(body.p_version),
+        granted_at: body.p_granted ? now() : null,
+        revoked_at: body.p_granted ? null : now(),
+        updated_at: now(),
+      }
+      if (body.p_feature === "ai_reports" && !body.p_granted)
+        delete records.weekly_reports
+      consents.set(String(actor.id), records)
+      await fulfillJson(route, records)
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/get_my_ai_report_schedule") {
+      await fulfillJson(route, { enabled: false, next_due_at: null })
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/mark_my_ai_report_read") {
+      await fulfillJson(route, null)
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/export_my_learning_records") {
+      const actor = userForRequest(request)
+      const body = (request.postDataJSON() ?? {}) as Row
+      if (!actor || body.p_expected_user_id !== actor.id) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Identity changed" },
+          403,
+        )
+        return
+      }
+      const exportTables: Record<string, Row[]> = {
+        tasks,
+        study_sessions: sessions,
+        behavior_events: behaviorEvents,
+        reminder_events: reminders,
+        reviews,
+        user_settings: settings,
+        task_plan_revisions: planRevisions,
+        ai_reports: aiReports,
+      }
+      const rows = (exportTables[String(body.p_table)] ?? []).filter(
+        (row) => row.user_id === actor.id,
+      )
+      const offset = Number(body.p_offset) || 0
+      await fulfillJson(route, rows.slice(offset, offset + 500))
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/consume_ai_generation_quota") {
+      await fulfillJson(route, true)
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/save_learning_plan") {
+      const actor = userForRequest(request)
+      const body = (request.postDataJSON() ?? {}) as Row
+      const plan = body.p_plan as Row
+      if (!actor || !plan || !Array.isArray(plan.steps)) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Authentication and valid plan required" },
+          403,
+        )
+        return
+      }
+      const key = `${String(actor.id)}:${String(body.p_request_id)}`
+      const payload = JSON.stringify([plan, body.p_revisions, body.p_task_id])
+      const prior = planSaves.get(key)
+      if (prior) {
+        if (prior.payload !== payload)
+          await fulfillJson(
+            route,
+            { code: "23505", message: "Idempotency key conflict" },
+            409,
+          )
+        else
+          await fulfillJson(
+            route,
+            tasks.find(
+              (task) => task.id === prior.taskId && task.user_id === actor.id,
+            ),
+          )
+        return
+      }
+      let task = body.p_task_id
+        ? tasks.find(
+            (candidate) =>
+              candidate.id === body.p_task_id && candidate.user_id === actor.id,
+          )
+        : undefined
+      if (body.p_task_id && !task) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Plan not found" },
+          403,
+        )
+        return
+      }
+      if (
+        task &&
+        task.current_plan_revision_id !== body.p_expected_revision_id
+      ) {
+        await fulfillJson(
+          route,
+          { code: "40001", message: "Plan changed; reload before editing" },
+          409,
+        )
+        return
+      }
+      if (
+        task &&
+        sessions.some(
+          (session) =>
+            session.task_id === task!.id &&
+            ["running", "paused"].includes(String(session.status)),
+        )
+      ) {
+        await fulfillJson(
+          route,
+          {
+            code: "23514",
+            message: "End the active learning session before revising the plan",
+          },
+          400,
+        )
+        return
+      }
+      const oldSteps = task?.steps as Row[] | undefined
+      if (
+        oldSteps?.some(
+          (step) =>
+            step.completed &&
+            !(plan.steps as Row[]).some(
+              (candidate) =>
+                candidate.id === step.id &&
+                candidate.title === step.title &&
+                candidate.completed,
+            ),
+        )
+      ) {
+        await fulfillJson(
+          route,
+          { code: "23514", message: "Completed steps must be preserved" },
+          400,
+        )
+        return
+      }
+      const timestamp = now()
+      if (!task) {
+        task = {
+          id: crypto.randomUUID(),
+          user_id: actor.id,
+          status: "planned",
+          completed_at: null,
+          created_at: timestamp,
+        }
+        tasks.unshift(task)
+      }
+      Object.assign(task, {
+        title: plan.title,
+        steps: plan.steps,
+        priority: plan.priority,
+        estimated_minutes: plan.estimatedMinutes,
+        observation_profile: plan.observationProfile,
+        observation_agreement: plan.observationAgreement,
+        intent_text: plan.intent,
+        planning_context: plan.context,
+        learning_purpose: plan.purpose,
+        completion_criterion: plan.selectedCriterion,
+        method_summary: plan.method,
+        suggested_session_minutes: plan.sessionMinutes,
+        due_at: plan.dueAt,
+        updated_at: timestamp,
+      })
+      let ordinal = planRevisions.filter(
+        (revision) => revision.task_id === task!.id,
+      ).length
+      const revisionInputs = Array.isArray(body.p_revisions)
+        ? (body.p_revisions as Row[])
+        : []
+      for (const revision of [
+        ...revisionInputs,
+        { kind: "adopted", snapshot: plan, changes: [] },
+      ]) {
+        const row = {
+          id: crypto.randomUUID(),
+          user_id: actor.id,
+          task_id: task.id,
+          ordinal: ++ordinal,
+          ...revision,
+          comment: revision.comment ?? "",
+          created_at: timestamp,
+          request_id: revision.kind === "adopted" ? body.p_request_id : null,
+        }
+        planRevisions.unshift(row)
+        if (revision.kind === "adopted") task.current_plan_revision_id = row.id
+      }
+      planSaves.set(key, { payload, taskId: String(task.id) })
+      await fulfillJson(route, task)
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/update_session_learning_context") {
+      const actor = userForRequest(request)
+      const body = (request.postDataJSON() ?? {}) as Row
+      const session = sessions.find(
+        (candidate) =>
+          candidate.id === body.p_session_id && candidate.user_id === actor?.id,
+      )
+      if (!session || !["running", "paused"].includes(String(session.status))) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Active session not found" },
+          403,
+        )
+        return
+      }
+      Object.assign(session, {
+        target_minutes: body.p_target_minutes,
+        energy_before: body.p_energy_before,
+        updated_at: now(),
+      })
+      await fulfillJson(route, session)
+      return
+    }
+    if (
+      url.pathname === "/rest/v1/rpc/record_valid_observation_coverage" ||
+      url.pathname === "/rest/v1/rpc/confirm_observation_coverage"
+    ) {
+      await fulfillJson(route, null)
+      return
+    }
+
     if (url.pathname === "/rest/v1/rpc/get_my_account_transfer_summary") {
       if (options.failSummaryAfterMerge && consumedMerge) {
         await fulfillJson(
@@ -1001,6 +1263,8 @@ export async function installMockSupabase(
       reminders.length = 0
       reviews.length = 0
       settings.length = 0
+      planRevisions.length = 0
+      aiReports.length = 0
       await fulfillJson(route, null)
       return
     }
@@ -1119,7 +1383,7 @@ export async function installMockSupabase(
       const timestamp = now()
       const session: Row = {
         id: crypto.randomUUID(),
-        user_id: userId,
+        user_id: task.user_id,
         task_id: task.id,
         status: "running",
         accumulated_seconds: 0,
@@ -1130,6 +1394,15 @@ export async function installMockSupabase(
         reminders_enabled: body.p_reminders_enabled ?? true,
         experiment_mode: body.p_experiment_mode ?? false,
         observation_profile: task.observation_profile ?? "study_screen_v1",
+        observation_agreement: task.observation_agreement ?? {
+          phone: "ignored",
+          tablet: "ignored",
+          absenceSeconds: 60,
+          screenDirection: false,
+        },
+        plan_revision_id: task.current_plan_revision_id ?? null,
+        target_minutes: task.suggested_session_minutes ?? 25,
+        energy_before: null,
         task_outcome: null,
         state_version: 0,
         camera_version: 0,
@@ -1506,6 +1779,13 @@ export async function installMockSupabase(
       reminder_events: reminders,
       reviews,
       user_settings: settings,
+      task_plan_revisions: planRevisions,
+      ai_reports: aiReports,
+      session_segments: [],
+      observation_runs: [],
+      task_lifecycle_events: [],
+      task_step_events: [],
+      user_consents: [],
     }
     const rows = tables[table]
     if (!rows) {
