@@ -32,6 +32,8 @@ jobs:
       - name: Install and verify pinned Supabase CLI
         timeout-minutes: 6
         shell: bash
+        env:
+          GH_PUBLIC_READ_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cli_bin=""
@@ -48,10 +50,16 @@ jobs:
             printf 'npm installer unavailable; using the checksum-pinned official v2.75.0 release\n'
             cli_dir="$(mktemp -d "$RUNNER_TEMP/studytrace-cli.XXXXXX")"
             cli_archive="$cli_dir/supabase_linux_amd64.tar.gz"
+            # This is the same official v2.75.0 asset, through GitHub's REST
+            # download endpoint rather than the release website's 504 cache.
+            # The built-in read-only job token is never forwarded to CDN hosts.
             curl --fail --location --retry 3 --retry-all-errors \
               --connect-timeout 15 --max-time 120 \
+              --header "Accept: application/octet-stream" \
+              --header "Authorization: Bearer $GH_PUBLIC_READ_TOKEN" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
               --output "$cli_archive" \
-              https://github.com/supabase/cli/releases/download/v2.75.0/supabase_linux_amd64.tar.gz
+              https://api.github.com/repos/supabase/cli/releases/assets/349592290
             printf 'e5597462f865d5ac72af0453358e37ecb0d85962ad6914a114a53de847303bde  %s\n' "$cli_archive" | sha256sum --check --strict -
             tar --extract --gzip --file "$cli_archive" --directory "$cli_dir" supabase
             cli_bin="$cli_dir/supabase"
