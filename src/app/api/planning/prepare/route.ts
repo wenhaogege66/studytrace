@@ -1,5 +1,6 @@
 import { preparePlanningSchema } from "@/lib/planning/contract"
 import { prepareLearningPlan } from "@/lib/planning/generate"
+import { logAiFailure } from "@/lib/server/ai-diagnostics"
 import {
   ApiError,
   apiFailure,
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
       throw new ApiError(429, "本阶段 AI 额度已用完，可以先手动制定计划")
     return apiJson(await prepareLearningPlan(input.data, request.signal))
   } catch (error) {
+    if (!(error instanceof ApiError)) logAiFailure("planning.prepare", error)
     return apiFailure(error, "暂时无法生成推荐方案，可以重试或使用手动方案")
   }
 }
