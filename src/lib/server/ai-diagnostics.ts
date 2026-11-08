@@ -57,8 +57,10 @@ export function aiFailureMetadata(error: unknown) {
 }
 
 export function logAiFailure(operation: AiOperation, error: unknown) {
+  const metadata = aiFailureMetadata(error)
   console.warn("studytrace.ai_failure", {
     operation,
-    ...aiFailureMetadata(error),
+    ...metadata,
   })
+  return metadata
 }

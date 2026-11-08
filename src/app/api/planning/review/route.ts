@@ -27,7 +27,12 @@ export async function POST(request: Request) {
       throw new ApiError(429, "AI 额度已用完，可直接保留你的方案")
     return apiJson(await reviewLearningPlan(input.data, request.signal))
   } catch (error) {
-    if (!(error instanceof ApiError)) logAiFailure("planning.review", error)
-    return apiFailure(error, "暂时无法点评修改，可直接保留你的方案")
+    const fallback = "暂时无法点评修改，可直接保留你的方案"
+    if (error instanceof ApiError) return apiFailure(error, fallback)
+    const { category } = logAiFailure("planning.review", error)
+    return apiJson(
+      { error: fallback, code: `AI_${category.toUpperCase()}` },
+      503,
+    )
   }
 }
