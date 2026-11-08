@@ -137,6 +137,7 @@ export function VisionPanel({
   const lastVideoChangeRef = useRef(0)
   const lastValidAtRef = useRef(0)
   const [coverageMs, setCoverageMs] = useState(0)
+  const coverageTotalRef = useRef(0)
   const [actualFps, setActualFps] = useState(0)
   const [objectsReady, setObjectsReady] = useState(false)
   const frameTimesRef = useRef<number[]>([])
@@ -485,6 +486,7 @@ export function VisionPanel({
       lastVideoTimeRef.current = -1
       lastVideoChangeRef.current = Date.now()
       setCoverageMs(0)
+      coverageTotalRef.current = 0
       setActualFps(0)
       frameTimesRef.current = []
       stream.getVideoTracks?.().forEach((track) =>
@@ -614,10 +616,11 @@ export function VisionPanel({
                 setStatusText("画面质量不足，当前无法判断")
               }
               if (deltaMs > 0) {
+                coverageTotalRef.current += deltaMs
                 setCoverageMs((value) => value + deltaMs)
                 coverageCallbackRef.current?.({
                   deltaMs,
-                  totalMs: result.state.validCoverageMs,
+                  totalMs: coverageTotalRef.current,
                   at: new Date(
                     event.data.observation.timestampMs,
                   ).toISOString(),
@@ -886,6 +889,7 @@ export function VisionPanel({
               <span>平板和具体使用行为仅由可选云端分析</span>
             </div>
             <CloudObservation
+              key={sessionId}
               active={phase === "observing" && !paused}
               experimentMode={experimentMode}
               agreement={agreement}

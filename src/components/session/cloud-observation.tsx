@@ -108,9 +108,12 @@ export function CloudObservation({
           setStatus("画面质量或有效采样不足，暂不上传")
           return
         }
-        const scale = Math.min(480/(video.videoWidth || 640), 360/(video.videoHeight || 480))
-        canvas.width = Math.round((video.videoWidth || 640)*scale)
-        canvas.height = Math.round((video.videoHeight || 480)*scale)
+        const scale = Math.min(
+          480 / (video.videoWidth || 640),
+          360 / (video.videoHeight || 480),
+        )
+        canvas.width = Math.round((video.videoWidth || 640) * scale)
+        canvas.height = Math.round((video.videoHeight || 480) * scale)
         context.drawImage(video, 0, 0, canvas.width, canvas.height)
         const image = canvas.toDataURL("image/jpeg", 0.55)
         if (image.length > 180_000) {

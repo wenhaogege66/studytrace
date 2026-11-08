@@ -179,7 +179,10 @@ self.addEventListener("message", (event: MessageEvent<IncomingMessage>) => {
           pitch: pose.pitch,
           valid:
             (!present || (pose.yaw !== null && pose.pitch !== null)) &&
-            lastObjects.personCount <= 1,
+            lastObjects.personCount <= 1 &&
+            // A visible body with an occluded/downturned face is not evidence
+            // of leaving the picture (especially during paper study).
+            (present || lastObjects.personCount === 0),
           ...lastObjects,
         },
       })

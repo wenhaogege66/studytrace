@@ -131,6 +131,22 @@ describe("worker safety and object signals", () => {
       }),
     )
   })
+  it("does not call a visible person absent just because their face is occluded", () => {
+    mocks.face.mockReturnValue({
+      faceLandmarks: [],
+      facialTransformationMatrixes: [],
+    })
+    detect()
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        observation: expect.objectContaining({
+          valid: false,
+          facePresent: false,
+          personCount: 1,
+        }),
+      }),
+    )
+  })
   it("unknowns multi-person frames and releases both models on stop", () => {
     mocks.objects.mockReturnValue({
       detections: [

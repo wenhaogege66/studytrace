@@ -179,7 +179,10 @@ export function SettingsScreen() {
         </TabsList>
 
         <TabsContent value="privacy" className="mt-5 space-y-5">
-          <ConsentSettings isAnonymous={user?.is_anonymous !== false} />
+          <ConsentSettings
+            key={user?.id}
+            isAnonymous={user?.is_anonymous !== false}
+          />
           <Card className="border-indigo-100 bg-white/90">
             <CardHeader>
               <CardTitle>数据用途清单</CardTitle>
