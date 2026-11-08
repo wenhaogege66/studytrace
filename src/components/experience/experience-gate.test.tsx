@@ -27,7 +27,7 @@ describe("ExperienceGate account recovery entry", () => {
 
     expect(screen.getByRole("button", { name: "开始体验" })).toBeInTheDocument()
     expect(
-      screen.getByRole("link", { name: "已有邮箱记录？验证并恢复" }),
+      screen.getByRole("link", { name: "邮箱账号登录 / 注册" }),
     ).toHaveAttribute("href", "/auth")
   })
 })

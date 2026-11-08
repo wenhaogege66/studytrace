@@ -22,8 +22,18 @@ begin
     if has_function_privilege('anon', function_name, 'execute') then
       raise exception 'anon must not execute %', function_name;
     end if;
-    if not has_function_privilege('authenticated', function_name, 'execute') then
-      raise exception 'authenticated must execute %', function_name;
+    if function_name = 'public.touch_my_activity()' then
+      if not has_function_privilege('authenticated', function_name, 'execute') then
+        raise exception 'authenticated must execute %', function_name;
+      end if;
+    else
+      if has_function_privilege('authenticated', function_name, 'execute') then
+        raise exception 'retired account API must not be callable: %', function_name;
+      end if;
+      -- Historical lock, retention and integrity regressions below still test
+      -- these implementations inside this rolled-back test transaction only.
+      -- No application role regains a production grant.
+      execute format('grant execute on function %s to authenticated', function_name);
     end if;
   end loop;
 

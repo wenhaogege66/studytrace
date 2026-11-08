@@ -1,4 +1,11 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import {
+  act,
+  render as testingRender,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -41,6 +48,12 @@ import {
   useExperience,
 } from "@/components/experience/experience-provider"
 
+function render(ui: ReactNode) {
+  return testingRender(
+    <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>,
+  )
+}
+
 function StatusProbe() {
   const { error, status, user } = useExperience()
   return (
@@ -52,6 +65,44 @@ function StatusProbe() {
 }
 
 describe("ExperienceProvider auth lifecycle", () => {
+  it("preserves planning drafts across uncertain network validation, not identity changes", async () => {
+    render(
+      <ExperienceProvider>
+        <StatusProbe />
+      </ExperienceProvider>,
+    )
+    await screen.findByText("ready:anonymous-user")
+    sessionStorage.setItem(
+      "studytrace:planning-draft:v1",
+      "anonymous-owned-draft",
+    )
+    mocks.getUser.mockResolvedValueOnce({
+      data: { user: null },
+      error: new Error("network interrupted"),
+    })
+    act(() => {
+      mocks.authCallback?.("TOKEN_REFRESHED", {
+        user: { id: "anonymous-user" },
+      } as Session)
+    })
+    await screen.findByText("error:none")
+    expect(sessionStorage.getItem("studytrace:planning-draft:v1")).toBe(
+      "anonymous-owned-draft",
+    )
+    act(() => {
+      mocks.authCallback?.("TOKEN_REFRESHED", {
+        user: { id: "anonymous-user" },
+      } as Session)
+    })
+    await screen.findByText("ready:anonymous-user")
+    expect(sessionStorage.getItem("studytrace:planning-draft:v1")).toBe(
+      "anonymous-owned-draft",
+    )
+    act(() => {
+      mocks.authCallback?.("SIGNED_OUT", null)
+    })
+    expect(sessionStorage.getItem("studytrace:planning-draft:v1")).toBeNull()
+  })
   beforeEach(() => {
     vi.resetAllMocks()
     mocks.authCallback = null
@@ -111,9 +162,7 @@ describe("ExperienceProvider auth lifecycle", () => {
     )
 
     await screen.findByText("needs_gate:none")
-    expect(
-      screen.getByText(/若刚完成记录合并，请通过邮箱验证恢复/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/可重新登录邮箱账号/)).toBeInTheDocument()
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" })
   })
 

@@ -163,9 +163,9 @@ enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = true
 # Allow/disallow testing manual linking of accounts
-enable_manual_linking = true
+enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -193,15 +193,13 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Keep the email provider enabled so existing accounts can receive OTPs.
-# The application sends `shouldCreateUser: false` for signed-out recovery;
-# new permanent accounts are created by upgrading an anonymous identity.
+# Independent email/password accounts; no anonymous upgrade or merge.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = true
+enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -227,13 +225,8 @@ otp_expiry = 600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
-[auth.email.template.magic_link]
-subject = "学迹验证码"
-content_path = "./supabase/templates/magic_link.html"
-
-[auth.email.template.email_change]
-subject = "确认保存学迹记录"
-content_path = "./supabase/templates/email_change.html"
+# Email is an account identifier, not verified ownership in this version.
+# No SMTP, magic-link, or email-recovery flow is used by the application.
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

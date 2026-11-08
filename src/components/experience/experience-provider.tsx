@@ -1,6 +1,7 @@
 "use client"
 
 import type { User } from "@supabase/supabase-js"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   createContext,
   use,
@@ -49,6 +50,9 @@ function isDefinitivelyMissingAuthUser(error: unknown) {
 }
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
+  const exposedUserId = useRef<string | null>(null)
+  const identityInitialized = useRef(false)
   const configured = hasSupabaseConfig()
   const mounted = useSyncExternalStore(
     subscribeToHydration,
@@ -62,6 +66,16 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const beginPromiseRef = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return
+    const channel = new BroadcastChannel("studytrace:identity")
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      if (event.data === "changing")
+        window.dispatchEvent(new Event("studytrace:identity-changing"))
+    }
+    return () => channel.close()
+  }, [])
+
+  useEffect(() => {
     let active = true
     let validationVersion = 0
     let clearingStaleSession = false
@@ -70,6 +84,30 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     if (!configured) return
 
     const supabase = getSupabase()
+    const exposeUser = (nextUser: User | null, identityVerified = true) => {
+      if (!identityVerified) {
+        window.dispatchEvent(new Event("studytrace:identity-changing"))
+        void queryClient.cancelQueries()
+        queryClient.clear()
+        setUser(null)
+        return
+      }
+      if (exposedUserId.current !== (nextUser?.id ?? null)) {
+        if (identityInitialized.current) {
+          try {
+            window.sessionStorage.removeItem("studytrace:planning-draft:v1")
+          } catch {
+            /* Storage may be disabled. */
+          }
+        }
+        window.dispatchEvent(new Event("studytrace:identity-changing"))
+        void queryClient.cancelQueries()
+        queryClient.clear()
+        exposedUserId.current = nextUser?.id ?? null
+      }
+      identityInitialized.current = true
+      setUser(nextUser)
+    }
     const validateStoredSession = async (showChecking = false) => {
       const currentValidation = ++validationVersion
       if (showChecking) setStatus("checking")
@@ -77,7 +115,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       const { data, error: sessionError } = await supabase.auth.getSession()
       if (!active || currentValidation !== validationVersion) return
       if (sessionError) {
-        setUser(null)
+        exposeUser(null, false)
         setError(sessionError.message)
         setStatus("error")
         return
@@ -85,7 +123,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
       const cachedUser = data.session?.user ?? null
       if (!cachedUser) {
-        setUser(null)
+        exposeUser(null)
         setError(null)
         setStatus("needs_gate")
         return
@@ -96,14 +134,14 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       if (!active || currentValidation !== validationVersion) return
       if (verificationError) {
         if (!isDefinitivelyMissingAuthUser(verificationError)) {
-          setUser(null)
+          exposeUser(null, false)
           setError(verificationError.message)
           setStatus("error")
           return
         }
 
         const staleSessionMessage =
-          "上次身份已失效。若刚完成记录合并，请通过邮箱验证恢复；否则可重新开始匿名体验。"
+          "上次身份已失效。可重新登录邮箱账号，或开始新的匿名体验。"
         try {
           const cleanupResult = await withSupabaseAuthMutationLock(
             async (): Promise<"changed" | "cleared" | "valid"> => {
@@ -146,12 +184,12 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
             return
           }
 
-          setUser(null)
+          exposeUser(null)
           setError(staleSessionMessage)
           setStatus("needs_gate")
         } catch (cleanupError) {
           if (!active) return
-          setUser(null)
+          exposeUser(null, false)
           setError(
             cleanupError instanceof Error
               ? cleanupError.message
@@ -163,13 +201,13 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       }
 
       if (!verified.user || verified.user.id !== cachedUser.id) {
-        setUser(null)
+        exposeUser(null, false)
         setError("本地身份与服务器不一致，请重试后再继续。")
         setStatus("error")
         return
       }
 
-      setUser(verified.user)
+      exposeUser(verified.user)
       setError(null)
       setStatus("ready")
     }
@@ -181,7 +219,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         if (!active) return
         if (event === "SIGNED_OUT" || !session) {
           validationVersion += 1
-          setUser(null)
+          exposeUser(null)
           if (!clearingStaleSession) setError(null)
           setStatus("needs_gate")
           return
@@ -197,7 +235,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       active = false
       subscription.subscription.unsubscribe()
     }
-  }, [checkVersion, configured, mounted])
+  }, [checkVersion, configured, mounted, queryClient])
 
   const begin = useCallback(async (captchaToken?: string) => {
     if (beginPromiseRef.current) return beginPromiseRef.current

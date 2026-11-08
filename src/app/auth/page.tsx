@@ -1,15 +1,22 @@
 import type { Metadata } from "next"
 
 import { AuthScreen } from "@/components/auth/auth-screen"
+import { Providers } from "@/components/providers"
 
 export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
-  title: "账号与同步",
-  description: "用邮箱验证码保存、恢复或删除学迹记录。",
+  title: "账号与记录",
+  description: "使用独立邮箱密码账号长期保存学习记录，或直接匿名体验。",
   robots: { index: false, follow: false },
 }
 
 export default function AuthPage() {
-  return <AuthScreen />
+  return (
+    <Providers>
+      <div className="min-h-screen bg-[var(--app-canvas)] px-4 py-6 sm:px-6 sm:py-10">
+        <AuthScreen />
+      </div>
+    </Providers>
+  )
 }

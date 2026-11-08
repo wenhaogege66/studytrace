@@ -57,17 +57,3 @@ export async function withSupabaseAuthMutationLock<T>(
 
   return operation()
 }
-
-export async function withAccountMergeStorageLock<T>(
-  operation: () => Promise<T> | T,
-): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.locks) {
-    return navigator.locks.request(
-      "studytrace:account-merge-storage",
-      { mode: "exclusive" },
-      operation,
-    )
-  }
-
-  return operation()
-}

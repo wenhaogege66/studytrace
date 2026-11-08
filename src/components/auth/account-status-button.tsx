@@ -24,7 +24,7 @@ export function AccountStatusButton({
         aria-label={
           permanent
             ? `账号 ${maskEmail(user?.email ?? "")} 已同步；前往管理或退出`
-            : "临时记录，仅此浏览器；前往保存并同步"
+            : "临时记录，仅此浏览器；前往登录或注册独立账号"
         }
       >
         {permanent ? <Cloud /> : <HardDrive />}
@@ -39,7 +39,7 @@ export function AccountStatusButton({
                 : "text-[11px] font-semibold text-indigo-700"
             }
           >
-            {permanent ? "已同步 · 管理账号" : "保存并同步"}
+            {permanent ? "已连接 · 管理账号" : "登录 / 注册"}
           </span>
         </span>
       </Link>

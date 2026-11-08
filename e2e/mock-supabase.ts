@@ -503,10 +503,56 @@ export async function installMockSupabase(
     }
 
     if (url.pathname === "/auth/v1/signup" && method === "POST") {
+      const body = (request.postDataJSON() ?? {}) as Row
+      if (body.email) {
+        const email = String(body.email).trim().toLowerCase()
+        if (knownAccounts.has(email)) {
+          await fulfillJson(
+            route,
+            { message: "User already registered", code: "user_already_exists" },
+            422,
+          )
+          return
+        }
+        const target = authUser({
+          id: permanentUserId,
+          email,
+          isAnonymous: false,
+        })
+        knownAccounts.set(email, permanentUserId)
+        users.set(permanentUserId, target)
+        authEvents.push("password-sign-up")
+        await fulfillJson(route, sessionPayload(target))
+        return
+      }
       currentUser = authUser({ id: userId, isAnonymous: true })
       users.set(userId, currentUser)
       authEvents.push("anonymous-sign-in")
       await fulfillJson(route, sessionPayload(currentUser))
+      return
+    }
+
+    if (
+      url.pathname === "/auth/v1/token" &&
+      url.searchParams.get("grant_type") === "password"
+    ) {
+      const body = (request.postDataJSON() ?? {}) as Row
+      const targetId = knownAccounts.get(
+        String(body.email ?? "")
+          .trim()
+          .toLowerCase(),
+      )
+      const target = targetId ? users.get(targetId) : null
+      if (!target || body.password !== "studytrace-test-password") {
+        await fulfillJson(
+          route,
+          { message: "Invalid login credentials", code: "invalid_credentials" },
+          400,
+        )
+        return
+      }
+      authEvents.push("password-sign-in")
+      await fulfillJson(route, sessionPayload(target))
       return
     }
 
@@ -917,7 +963,7 @@ export async function installMockSupabase(
       return
     }
 
-    if (url.pathname === "/rest/v1/rpc/delete_my_account") {
+    if (url.pathname === "/rest/v1/rpc/delete_my_password_account") {
       const actor = userForRequest(request)
       if (!actor || actor.is_anonymous) {
         await fulfillJson(

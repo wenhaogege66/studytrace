@@ -2,11 +2,11 @@
 
 import {
   BookOpenCheck,
+  ChartNoAxesCombined,
   Code2,
   Home,
   ListTodo,
   Settings,
-  Sparkles,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -18,9 +18,16 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
 import { cn } from "@/lib/utils"
+import { productLanguage } from "@/lib/product-language"
 
 const navigation = [
-  { href: "/app", label: "任务", icon: ListTodo, exact: true },
+  { href: "/app", label: productLanguage.plan, icon: ListTodo, exact: true },
+  {
+    href: "/app/insights",
+    label: productLanguage.report,
+    icon: ChartNoAxesCombined,
+    exact: false,
+  },
   { href: "/app/settings", label: "设置", icon: Settings, exact: false },
 ]
 
@@ -63,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             href="/app"
             onNavigate={(event) => guardNavigation(event, "/app")}
             className="group flex min-w-0 shrink-0 items-center gap-2.5"
-            aria-label="学迹任务首页"
+            aria-label="学迹学习计划首页"
           >
             <span className="grid size-9 place-items-center rounded-xl bg-indigo-700 text-white shadow-md shadow-indigo-900/15 transition-transform group-hover:-rotate-3">
               <BookOpenCheck className="size-5" />
@@ -160,13 +167,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           )
         })}
-        <Link
-          href="/"
-          onNavigate={(event) => guardNavigation(event, "/")}
-          className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium text-slate-500"
-        >
-          <Sparkles className="size-4" /> 介绍
-        </Link>
       </nav>
     </div>
   )

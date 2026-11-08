@@ -35,5 +35,7 @@ test("邮箱入口在 Turnstile 脚本失败后保持提交禁用并提供重试
     page.getByRole("alert").filter({ hasText: "安全校验" }),
   ).toContainText("安全校验暂不可用")
   await expect(page.getByRole("button", { name: "重新加载页面" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "发送验证码" })).toBeDisabled()
+  await expect(
+    page.getByRole("button", { name: "登录并进入学习计划" }),
+  ).toBeDisabled()
 })

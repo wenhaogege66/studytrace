@@ -96,12 +96,12 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             先把要做的事说清楚，再开始一段可复盘的学习。
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-pretty text-slate-600 sm:text-lg">
-            学迹把任务、计时、本地视觉观察与一次复盘连成闭环。它只记录可由你修正的行为事件，不上传摄像头画面，也不给你打“专注分”。
+            学迹把学习计划、计时、过程观察与学习复盘连成闭环。本地观察默认不上传；可选云端过程观察需单独授权，按约定短时发送压缩图像。不计算“专注分”。
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
               [Database, "匿名保存", "清除浏览器数据后不可恢复"],
-              [EyeOff, "本地识别", "画面与人脸关键点不上传"],
+              [EyeOff, "自主授权", "本地观察与可选云端处理分开"],
               [ShieldCheck, "你可修正", "确认、改写或硬删除事件"],
             ].map(([Icon, title, description]) => (
               <div
@@ -122,7 +122,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
           <CardHeader>
             <CardTitle className="text-2xl">开始体验</CardTitle>
             <CardDescription>
-              无需先注册；可以直接匿名体验，已有邮箱记录也可恢复。
+              无需先注册；可以直接匿名体验，或登录独立邮箱密码账号。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -183,7 +183,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             </Button>
             <div className="border-t border-slate-200 pt-4 text-center">
               <Button variant="ghost" className="min-h-11" asChild>
-                <Link href="/auth">已有邮箱记录？验证并恢复</Link>
+                <Link href="/auth">邮箱账号登录 / 注册</Link>
               </Button>
             </div>
             {error ? <p className="text-destructive text-sm">{error}</p> : null}

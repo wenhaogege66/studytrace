@@ -271,7 +271,7 @@ test("从全局导航离开会自动暂停，并锁定当前会话的观察方�
     page.getByRole("button", { name: "暂停", exact: true }),
   ).toBeVisible()
 
-  await page.getByRole("link", { name: "学迹任务首页" }).click()
+  await page.getByRole("link", { name: "学迹学习计划首页" }).click()
   await expect(page).toHaveURL(/\/app$/)
   await expect(page.getByText("状态：已暂停")).toBeVisible()
 
@@ -301,7 +301,7 @@ test("显式导航会作废尚未提交的待决恢复", async ({ page }) => {
     response.url().endsWith("/rest/v1/rpc/resume_study_session"),
   )
   await page.getByRole("button", { name: "继续" }).click()
-  await page.getByRole("link", { name: "学迹任务首页" }).click()
+  await page.getByRole("link", { name: "学迹学习计划首页" }).click()
   await pendingResume
 
   await expect(page).toHaveURL(/\/app$/)

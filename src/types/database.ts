@@ -443,6 +443,7 @@ export type Database = {
         Args: { p_token: string }
         Returns: undefined
       }
+      delete_my_password_account: { Args: never; Returns: undefined }
       delete_my_data: { Args: never; Returns: undefined }
       finish_study_session: {
         Args: {

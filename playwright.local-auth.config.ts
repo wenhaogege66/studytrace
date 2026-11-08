@@ -22,6 +22,7 @@ process.env.STUDYTRACE_LOCAL_API_URL = localSupabase.API_URL
 process.env.STUDYTRACE_LOCAL_DB_URL = localSupabase.DB_URL
 process.env.STUDYTRACE_LOCAL_MAILPIT_URL = localSupabase.MAILPIT_URL
 process.env.STUDYTRACE_LOCAL_SECRET_KEY = localSupabase.SECRET_KEY
+process.env.STUDYTRACE_LOCAL_PUBLISHABLE_KEY = localSupabase.PUBLISHABLE_KEY
 
 const port = 3200
 const baseURL = `http://127.0.0.1:${port}`
