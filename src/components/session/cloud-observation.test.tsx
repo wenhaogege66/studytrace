@@ -10,7 +10,9 @@ vi.mock("@/lib/privacy/consents", () => ({
 vi.mock("@/lib/supabase/client", () => ({
   getSupabase: () => ({
     auth: {
-      getSession: async () => ({ data: { session: { access_token: "test" } } }),
+      getSession: async () => ({
+        data: { session: { access_token: "test", user: { id: "user-a" } } },
+      }),
     },
   }),
 }))
@@ -45,6 +47,7 @@ describe("explicit cloud consent and upload lifecycle", () => {
     }
     return {
       active: true,
+      userId: "user-a",
       experimentMode: false,
       agreement: {
         phone: "restricted" as const,
@@ -70,7 +73,7 @@ describe("explicit cloud consent and upload lifecycle", () => {
     const view = render(<CloudObservation {...input} />)
     await act(async () => fireEvent.click(screen.getByRole("checkbox")))
     await act(async () => vi.advanceTimersByTimeAsync(20000))
-    expect(mocks.set).toHaveBeenCalledWith("cloud_observation", true)
+    expect(mocks.set).toHaveBeenCalledWith("cloud_observation", true, "user-a")
     expect(mocks.fetch).toHaveBeenCalledOnce()
     const options = mocks.fetch.mock.calls[0][1]
     const body = JSON.parse(options.body)
@@ -94,5 +97,64 @@ describe("explicit cloud consent and upload lifecycle", () => {
       window.dispatchEvent(new Event("studytrace:observation-stopping")),
     )
     expect(options.signal.aborted).toBe(true)
+  })
+  it("keeps the twenty-second dispatch cadence with ten-second provider latency", async () => {
+    mocks.fetch.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                json: async () => ({
+                  status: "complete",
+                  quality: "good",
+                  candidate_event_ids: [],
+                }),
+              }),
+            10000,
+          ),
+        ),
+    )
+    render(<CloudObservation {...props()} />)
+    await act(async () => fireEvent.click(screen.getByRole("checkbox")))
+    await act(async () => vi.advanceTimersByTimeAsync(20000))
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTimeAsync(10000))
+    await act(async () => vi.advanceTimersByTimeAsync(10000))
+    expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(mocks.fetch.mock.calls[0][1].body),
+      second = JSON.parse(mocks.fetch.mock.calls[1][1].body)
+    expect(
+      Date.parse(second.frames[3].capturedAt) -
+        Date.parse(first.frames[3].capturedAt),
+    ).toBe(20000)
+  })
+  it("aborts on a same-user revocation broadcast from another tab", async () => {
+    const channels: Array<{
+      onmessage: ((event: MessageEvent) => void) | null
+    }> = []
+    vi.stubGlobal(
+      "BroadcastChannel",
+      class {
+        onmessage: ((event: MessageEvent) => void) | null = null
+        close = vi.fn()
+        constructor() {
+          channels.push(this)
+        }
+      },
+    )
+    mocks.fetch.mockImplementation(() => new Promise(() => {}))
+    render(<CloudObservation {...props()} />)
+    await act(async () => fireEvent.click(screen.getByRole("checkbox")))
+    await act(async () => vi.advanceTimersByTimeAsync(20000))
+    const options = mocks.fetch.mock.calls[0][1]
+    await act(async () =>
+      channels[0].onmessage?.({
+        data: { userId: "user-a", consents: { cloud_observation: false } },
+      } as MessageEvent),
+    )
+    expect(options.signal.aborted).toBe(true)
+    expect(screen.getByRole("checkbox")).not.toBeChecked()
   })
 })

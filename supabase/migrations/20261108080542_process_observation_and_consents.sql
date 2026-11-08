@@ -100,6 +100,19 @@ create index cloud_observation_created_idx on private.cloud_observation_windows(
 alter table private.cloud_observation_windows enable row level security;
 revoke all on private.cloud_observation_windows from public,anon,authenticated;
 
+-- Operational abuse budget is deliberately independent of deletable study
+-- records. Resetting/erasing a plan must not refund provider calls. The subject
+-- is a one-way hash, no media or business record, retained for seven days.
+create table private.cloud_observation_quota_receipts(
+  request_id uuid primary key,
+  subject_hash bytea not null check(octet_length(subject_hash)=32),
+  created_at timestamptz not null default clock_timestamp()
+);
+create index cloud_observation_quota_subject_time_idx on private.cloud_observation_quota_receipts(subject_hash,created_at);
+create index cloud_observation_quota_time_idx on private.cloud_observation_quota_receipts(created_at);
+alter table private.cloud_observation_quota_receipts enable row level security;
+revoke all on private.cloud_observation_quota_receipts from public,anon,authenticated;
+
 create or replace function public.prepare_cloud_observation(
   p_session_id uuid,p_window_id uuid,p_started_at timestamptz,p_ended_at timestamptz
 ) returns jsonb language plpgsql security definer set search_path='' as $$
@@ -129,14 +142,17 @@ begin
     return jsonb_build_object('status',old_window.status,'result',old_window.result);
   end if;
   perform pg_advisory_xact_lock(hashtextextended('studytrace:cloud-global:'||(ts at time zone 'UTC')::date::text,0));
-  if (select count(*) from private.cloud_observation_windows where created_at>=ts-interval '1 minute' and user_id=caller)>=3
-    or (select count(*) from private.cloud_observation_windows where created_at>=date_trunc('day',ts at time zone 'UTC') at time zone 'UTC' and user_id=caller)>=360
-    or (select count(*) from private.cloud_observation_windows where created_at>=date_trunc('day',ts at time zone 'UTC') at time zone 'UTC')>=2000
+  if (select count(*) from private.cloud_observation_quota_receipts where created_at>=ts-interval '1 minute' and subject_hash=extensions.digest(caller::text,'sha256'))>=3
+    or (select count(*) from private.cloud_observation_quota_receipts where created_at>=date_trunc('day',ts at time zone 'UTC') at time zone 'UTC' and subject_hash=extensions.digest(caller::text,'sha256'))>=360
+    or (select count(*) from private.cloud_observation_quota_receipts where created_at>=date_trunc('day',ts at time zone 'UTC') at time zone 'UTC')>=2000
     or exists(select 1 from private.cloud_observation_windows where user_id=caller and status='pending' and created_at>ts-interval '30 seconds') then
     raise exception 'Cloud observation quota reached' using errcode='P0001'; end if;
+  insert into private.cloud_observation_quota_receipts(request_id,subject_hash,created_at)
+    values(p_window_id,extensions.digest(caller::text,'sha256'),ts);
   insert into private.cloud_observation_windows(id,user_id,auth_session_id,session_id,camera_version,started_at,ended_at)
     values(p_window_id,caller,sid,p_session_id,s.camera_version,p_started_at,p_ended_at);
   delete from private.cloud_observation_windows where created_at<ts-interval '7 days';
+  delete from private.cloud_observation_quota_receipts where created_at<ts-interval '7 days';
   return jsonb_build_object('status','reserved','agreement',s.observation_agreement);
 end; $$;
 revoke all on function public.prepare_cloud_observation(uuid,uuid,timestamptz,timestamptz) from public,anon;
@@ -148,7 +164,7 @@ create or replace function public.finish_cloud_observation(p_window_id uuid,p_re
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare w private.cloud_observation_windows%rowtype; s public.study_sessions%rowtype;
   previous private.cloud_observation_windows%rowtype; rule text; event_id uuid;
-  final_result jsonb; candidate_ids jsonb:='[]'::jsonb;
+  final_result jsonb; candidate_ids jsonb:='[]'::jsonb; reminder_ids jsonb:='[]'::jsonb; active_rules jsonb:='[]'::jsonb;
   original_claims text:=current_setting('request.jwt.claims',true);
   original_sub text:=current_setting('request.jwt.claim.sub',true);
   original_trusted text:=current_setting('studytrace.trusted_cloud_result',true);
@@ -182,9 +198,10 @@ begin
     if s.observation_agreement->>rule='restricted' and p_result->>'quality'='good' and p_result->>rule='possible'
       and previous.status='complete' and previous.camera_version=w.camera_version
       and previous.result->>'quality'='good' and previous.result->>rule='possible'
-      and w.ended_at-previous.ended_at between interval '14 seconds' and interval '28 seconds'
-      and not exists(select 1 from public.behavior_events where session_id=w.session_id
-        and event_type=rule||'_use' and source='cloud_vision' and created_at>clock_timestamp()-interval '10 minutes') then
+      and previous.result->>'model'=p_model
+      and w.ended_at-previous.ended_at between interval '14 seconds' and interval '28 seconds' then
+      active_rules:=active_rules||jsonb_build_array(rule);
+      if not (coalesce(previous.result->'active_rules','[]'::jsonb) ? rule) then
       -- The event describes this sampled window, not the unsampled interval.
       -- Set the authenticated ownership context for the existing insert guard.
       perform set_config('request.jwt.claim.sub',w.user_id::text,true);
@@ -195,9 +212,15 @@ begin
           jsonb_build_object('rule',rule,'model',p_model,'detector_version','cloud-sequence.v1','window_id',w.id,
             'previous_window_id',previous.id,'sampled_seconds',extract(epoch from w.ended_at-w.started_at))) returning id into event_id;
       candidate_ids:=candidate_ids||jsonb_build_array(event_id);
+      if s.reminders_enabled and exists(select 1 from public.user_settings where user_id=w.user_id and reminders_enabled)
+        and not exists(select 1 from public.reminder_events reminder join public.behavior_events event on event.id=reminder.behavior_event_id
+          where reminder.user_id=w.user_id and event.event_type=rule||'_use' and reminder.shown_at>clock_timestamp()-interval '10 minutes') then
+        reminder_ids:=reminder_ids||jsonb_build_array(event_id);
+      end if;
+      end if;
     end if;
   end loop;
-  final_result:=final_result||jsonb_build_object('candidate_event_ids',candidate_ids);
+  final_result:=final_result||jsonb_build_object('candidate_event_ids',candidate_ids,'reminder_event_ids',reminder_ids,'active_rules',active_rules);
   update private.cloud_observation_windows set status='complete',result=final_result where id=w.id;
   perform set_config('request.jwt.claims',coalesce(original_claims,''),true);
   perform set_config('request.jwt.claim.sub',coalesce(original_sub,''),true);
@@ -206,4 +229,8 @@ begin
 end; $$;
 revoke all on function public.finish_cloud_observation(uuid,jsonb,text) from public,anon,authenticated;
 grant execute on function public.finish_cloud_observation(uuid,jsonb,text) to service_role;
+-- Six-day target plus hourly cleanup keeps minimized anti-abuse receipts
+-- within the disclosed seven-day window during normal scheduler operation.
+select cron.schedule('studytrace-cloud-observation-cleanup','12 * * * *',
+  'delete from private.cloud_observation_quota_receipts where created_at<clock_timestamp()-interval ''6 days''; delete from private.cloud_observation_windows where created_at<clock_timestamp()-interval ''7 days'';');
 notify pgrst,'reload schema';

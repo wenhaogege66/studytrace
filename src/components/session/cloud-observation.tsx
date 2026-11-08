@@ -20,13 +20,15 @@ export function CloudObservation({
   videoRef,
   lastValidAtRef,
   onCandidate,
+  userId,
 }: {
   active: boolean
   experimentMode: boolean
   agreement: ObservationAgreement
   videoRef: RefObject<HTMLVideoElement | null>
   lastValidAtRef: RefObject<number>
-  onCandidate: (eventIds: string[]) => void
+  onCandidate: (eventIds: string[], reminderIds: string[]) => void
+  userId?: string
 }) {
   const [enabled, setEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -38,6 +40,7 @@ export function CloudObservation({
     candidateRef.current = onCandidate
   }, [onCandidate])
   const abortRef = useRef<AbortController | null>(null)
+  const lastRequestAtRef = useRef<number | null>(null)
   const stopUploads = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
@@ -55,6 +58,23 @@ export function CloudObservation({
       stopUploads()
       setEnabled(false)
     }
+    const channel =
+      typeof BroadcastChannel !== "undefined"
+        ? new BroadcastChannel("studytrace:consents")
+        : null
+    if (channel)
+      channel.onmessage = (
+        event: MessageEvent<{ userId: string; consents: UserConsents }>,
+      ) => {
+        if (
+          (!userId || event.data.userId === userId) &&
+          !hasConsent(event.data.consents, "cloud_observation")
+        ) {
+          stopUploads()
+          setEnabled(false)
+          setStatus("其他页面已撤回授权，不再发送图像")
+        }
+      }
     window.addEventListener("studytrace:consent-changed", changed)
     window.addEventListener("studytrace:identity-changing", identity)
     window.addEventListener("studytrace:observation-stopping", stopUploads)
@@ -63,8 +83,9 @@ export function CloudObservation({
       window.removeEventListener("studytrace:identity-changing", identity)
       window.removeEventListener("studytrace:observation-stopping", stopUploads)
       stopUploads()
+      channel?.close()
     }
-  }, [stopUploads])
+  }, [stopUploads, userId])
 
   useEffect(() => {
     if (
@@ -72,11 +93,13 @@ export function CloudObservation({
       !enabled ||
       experimentMode ||
       (agreement.phone !== "restricted" && agreement.tablet !== "restricted")
-    )
+    ) {
+      lastRequestAtRef.current = null
       return
+    }
     let cancelled = false
     let frames: Frame[] = []
-    let lastRequestAt = Date.now()
+    lastRequestAtRef.current ??= Date.now()
     const canvas = document.createElement("canvas")
     canvas.width = 480
     canvas.height = 360
@@ -125,7 +148,7 @@ export function CloudObservation({
         frames = frames.slice(-4)
         if (
           frames.length < 4 ||
-          Date.now() - lastRequestAt < 20_000 ||
+          Date.now() - (lastRequestAtRef.current ?? Date.now()) < 20_000 ||
           abortRef.current !== controller
         )
           return
@@ -137,15 +160,36 @@ export function CloudObservation({
           frames = []
           return
         }
-        lastRequestAt = Date.now()
+        lastRequestAtRef.current = Date.now()
         const selected = frames
         frames = []
         // Hold no additional frame group while a request is in flight.
         setStatus("云端正在处理本组四张图像")
         clearInterval(interval)
+        const requestTimeout = setTimeout(() => {
+          if (cancelled) return
+          controller.abort()
+          setEnabled(false)
+          setError("云端处理超时，已停止上传；本地观察继续")
+        }, 18_000)
         try {
-          const { data } = await getSupabase().auth.getSession()
-          if (!data.session || cancelled || document.hidden) return
+          const { data } = await Promise.race([
+            getSupabase().auth.getSession(),
+            new Promise<never>((_resolve, reject) =>
+              controller.signal.addEventListener(
+                "abort",
+                () => reject(new DOMException("Cancelled", "AbortError")),
+                { once: true },
+              ),
+            ),
+          ])
+          if (
+            !data.session ||
+            (userId && data.session.user.id !== userId) ||
+            cancelled ||
+            document.hidden
+          )
+            return
           const sessionId = video.dataset.sessionId
           const response = await fetch("/api/observation/analyze", {
             method: "POST",
@@ -165,6 +209,7 @@ export function CloudObservation({
             status?: string
             quality?: string
             candidate_event_ids?: string[]
+            reminder_event_ids?: string[]
           }
           if (cancelled || document.hidden || controller.signal.aborted) return
           if (!response.ok) {
@@ -181,13 +226,17 @@ export function CloudObservation({
                 : "本组分析完成，仅记录可见线索",
           )
           if (result.candidate_event_ids?.length)
-            candidateRef.current(result.candidate_event_ids)
+            candidateRef.current(
+              result.candidate_event_ids,
+              result.reminder_event_ids ?? [],
+            )
         } catch {
           if (!controller.signal.aborted && !cancelled) {
             setError("云端网络不可用，本地观察继续")
             setEnabled(false)
           }
         } finally {
+          clearTimeout(requestTimeout)
           selected.length = 0
           // Restart the lifecycle through a state tick, with a new abort token.
           if (!cancelled && !controller.signal.aborted)
@@ -211,6 +260,7 @@ export function CloudObservation({
     videoRef,
     lastValidAtRef,
     cycle,
+    userId,
   ])
 
   const change = async (checked: boolean) => {
@@ -223,9 +273,9 @@ export function CloudObservation({
     setSaving(true)
     setError(null)
     try {
-      const consents = await getMyConsents()
+      const consents = await getMyConsents(userId)
       if (!hasConsent(consents, "cloud_observation"))
-        await setMyConsent("cloud_observation", true)
+        await setMyConsent("cloud_observation", true, userId)
       setEnabled(true)
       setStatus("云端已待命：每二十秒一组四张压缩图像")
     } catch {
@@ -264,7 +314,7 @@ export function CloudObservation({
         </p>
       ) : null}
       <p className="mt-2 text-xs text-slate-600" role="status">
-        {enabled && !active ? "等待本地观察校准完成后才开始采样" : status}
+        {enabled && !active ? "等待摄像头模型就绪后才开始采样" : status}
       </p>
       {error ? (
         <p className="mt-2 text-xs text-amber-900" role="alert">

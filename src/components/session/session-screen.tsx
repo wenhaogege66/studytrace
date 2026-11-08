@@ -692,6 +692,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <div className="space-y-6">
           <VisionPanel
             key={sessionId}
+            userId={session.user_id}
             sessionId={sessionId}
             paused={timer.mode !== "running"}
             experimentMode={session.experiment_mode}

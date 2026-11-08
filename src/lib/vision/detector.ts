@@ -9,6 +9,7 @@ export type VisionObservation = {
   valid?: boolean
   personCount?: number
   phoneVisible?: boolean
+  usableForCloud?: boolean
 }
 
 export type VisionThresholds = {

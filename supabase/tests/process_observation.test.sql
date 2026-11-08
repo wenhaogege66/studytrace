@@ -41,6 +41,22 @@ reset role;
 do $$ begin
   if (select count(*) from public.behavior_events where source='cloud_vision' and session_id='84000000-0000-4000-8000-000000000031')<>1 then raise exception 'Completion retry duplicated event'; end if;
 end $$;
+insert into public.reminder_events(user_id,session_id,behavior_event_id)
+  select user_id,session_id,id from public.behavior_events where session_id='84000000-0000-4000-8000-000000000031';
+do $$ declare n integer; data jsonb; window_id uuid; phone_signal text; begin
+  for n in 43..46 loop
+    update private.cloud_observation_windows set created_at=created_at-interval '20 seconds',started_at=started_at-interval '20 seconds',ended_at=ended_at-interval '20 seconds'
+      where session_id='84000000-0000-4000-8000-000000000031';
+    window_id:=('84000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid;
+    phone_signal:=case when n=44 then 'clear' else 'possible' end;
+    insert into private.cloud_observation_windows(id,user_id,auth_session_id,session_id,camera_version,started_at,ended_at)
+    values(window_id,'84000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000011','84000000-0000-4000-8000-000000000031',1,clock_timestamp()-interval '6 seconds',clock_timestamp());
+    data:=public.finish_cloud_observation(window_id,jsonb_build_object('quality','good','phone',phone_signal,'tablet','unknown'),'test-vision');
+    if n=43 and jsonb_array_length(data->'candidate_event_ids')<>0 then raise exception 'Continuous streak duplicated event'; end if;
+    if n=46 and (jsonb_array_length(data->'candidate_event_ids')<>1 or jsonb_array_length(data->'reminder_event_ids')<>0) then
+      raise exception 'Separate episode must be recorded but respect reminder cooldown'; end if;
+  end loop;
+end $$;
 -- A late result after revocation is discarded even if it was reserved earlier.
 insert into private.cloud_observation_windows(id,user_id,auth_session_id,session_id,camera_version,started_at,ended_at)
 values('84000000-0000-4000-8000-000000000042','84000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000011','84000000-0000-4000-8000-000000000031',1,clock_timestamp()-interval '6 seconds',clock_timestamp());
@@ -73,5 +89,26 @@ do $$ begin
   perform public.set_my_consent('ai_reports',false,'2026-11-08.v1');
   if (public.get_my_consents()->'weekly_reports'->>'granted')::boolean then raise exception 'Weekly grant survived report revocation'; end if;
   begin perform public.prepare_cloud_observation('84000000-0000-4000-8000-000000000031',gen_random_uuid(),clock_timestamp()-interval '6 seconds',clock_timestamp()); raise exception 'Cross-owner observation accepted'; exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+-- Deleting business rows does not refund the independent anti-abuse budget.
+select set_config('request.jwt.claim.sub','84000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"84000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"84000000-0000-4000-8000-000000000011"}',true);
+select public.cancel_study_session('84000000-0000-4000-8000-000000000031',0);
+delete from public.tasks where id='84000000-0000-4000-8000-000000000021';
+do $$ begin if (select count(*) from private.cloud_observation_quota_receipts where subject_hash=extensions.digest('84000000-0000-4000-8000-000000000001','sha256'))<>1 then raise exception 'Business deletion refunded provider budget'; end if; end $$;
+insert into private.cloud_observation_quota_receipts(request_id,subject_hash)
+select gen_random_uuid(),extensions.digest('84000000-0000-4000-8000-000000000001','sha256') from generate_series(1,2);
+select set_config('request.jwt.claim.sub','84000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claims','{"sub":"84000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"84000000-0000-4000-8000-000000000011"}',true);
+insert into public.tasks(id,user_id,title,steps,estimated_minutes,observation_agreement)
+values('84000000-0000-4000-8000-000000000021','84000000-0000-4000-8000-000000000001','重新创建预算测试','[{"id":"s1","title":"测试步骤","completed":false}]',25,'{"phone":"restricted","tablet":"ignored","absenceSeconds":60,"screenDirection":false}');
+insert into public.study_sessions(id,user_id,task_id,started_at,resumed_at,camera_enabled,camera_version)
+values('84000000-0000-4000-8000-000000000031','84000000-0000-4000-8000-000000000001','84000000-0000-4000-8000-000000000021',now()-interval '1 minute',now()-interval '1 minute',true,1);
+set local role authenticated;
+do $$ begin
+  perform public.set_my_consent('cloud_observation',true,'2026-11-08.v1');
+  begin perform public.prepare_cloud_observation('84000000-0000-4000-8000-000000000031',gen_random_uuid(),clock_timestamp()-interval '6 seconds',clock_timestamp()); raise exception 'Budget was refunded after delete';
+  exception when raise_exception then if sqlerrm<>'Cloud observation quota reached' then raise; end if; end;
 end $$;
 rollback;

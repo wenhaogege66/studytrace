@@ -182,7 +182,9 @@ self.addEventListener("message", (event: MessageEvent<IncomingMessage>) => {
             lastObjects.personCount <= 1 &&
             // A visible body with an occluded/downturned face is not evidence
             // of leaving the picture (especially during paper study).
-            (present || lastObjects.personCount === 0),
+            (present ||
+              (objectDetector !== null && lastObjects.personCount === 0)),
+          usableForCloud: lastObjects.personCount <= 1,
           ...lastObjects,
         },
       })

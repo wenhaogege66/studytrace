@@ -19,13 +19,19 @@ import {
   type UserConsents,
 } from "@/lib/privacy/consents"
 
-export function ConsentSettings({ isAnonymous }: { isAnonymous: boolean }) {
+export function ConsentSettings({
+  isAnonymous,
+  userId,
+}: {
+  isAnonymous: boolean
+  userId?: string
+}) {
   const [consents, setConsents] = useState<UserConsents>()
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     let live = true
-    void getMyConsents()
+    void getMyConsents(userId)
       .then((value) => {
         if (live) setConsents(value)
       })
@@ -35,12 +41,12 @@ export function ConsentSettings({ isAnonymous }: { isAnonymous: boolean }) {
     return () => {
       live = false
     }
-  }, [])
+  }, [userId])
   const change = async (feature: ConsentFeature, granted: boolean) => {
     setSaving(true)
     setError(null)
     try {
-      setConsents(await setMyConsent(feature, granted))
+      setConsents(await setMyConsent(feature, granted, userId))
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "授权保存失败")
     } finally {
@@ -99,6 +105,9 @@ export function ConsentSettings({ isAnonymous }: { isAnonymous: boolean }) {
           </div>
         ))}
         <p className="text-xs leading-5 text-slate-500">
+          最小化的额度和防滥用计数最多保留七天，不包含学习内容或媒体，不因删除计划或清空记录而重置。
+        </p>
+        <p className="text-xs leading-5 text-slate-500">
           图像只在浏览器与请求处理中短暂存在，不写入数据库、对象存储或应用日志。百炼说明会依法存储模型调用产生的数据，第三方按其服务条款处理，不能据此承诺第三方零留存。AI
           的建议不是对注意力能力或医学状态的判断。
         </p>
@@ -109,7 +118,7 @@ export function ConsentSettings({ isAnonymous }: { isAnonymous: boolean }) {
               <Button
                 variant="link"
                 onClick={() =>
-                  void getMyConsents()
+                  void getMyConsents(userId)
                     .then(setConsents)
                     .then(() => setError(null))
                     .catch(() => setError("授权设置仍无法加载"))

@@ -67,6 +67,7 @@ function directionLabel(direction: EventDirection | null) {
 
 export function VisionPanel({
   sessionId,
+  userId,
   paused,
   experimentMode,
   observationProfile,
@@ -77,6 +78,7 @@ export function VisionPanel({
   onValidCoverage,
 }: {
   sessionId: string
+  userId?: string
   paused: boolean
   experimentMode: boolean
   observationProfile: ObservationProfile
@@ -136,12 +138,17 @@ export function VisionPanel({
   const lastVideoTimeRef = useRef(-1)
   const lastVideoChangeRef = useRef(0)
   const lastValidAtRef = useRef(0)
+  const lastCloudFrameAtRef = useRef(0)
   const [coverageMs, setCoverageMs] = useState(0)
   const coverageTotalRef = useRef(0)
   const [actualFps, setActualFps] = useState(0)
   const [objectsReady, setObjectsReady] = useState(false)
   const frameTimesRef = useRef<number[]>([])
   const coverageCallbackRef = useRef(onValidCoverage)
+  const remindersEnabledRef = useRef(settings?.reminders_enabled ?? true)
+  useEffect(() => {
+    remindersEnabledRef.current = settings?.reminders_enabled ?? true
+  }, [settings?.reminders_enabled])
   useEffect(() => {
     coverageCallbackRef.current = onValidCoverage
   }, [onValidCoverage])
@@ -241,6 +248,7 @@ export function VisionPanel({
         if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
         pendingFrameRef.current = null
         lastValidAtRef.current = 0
+        lastCloudFrameAtRef.current = 0
         initTimeoutRef.current = null
         if (intervalRef.current) clearInterval(intervalRef.current)
         intervalRef.current = null
@@ -335,10 +343,7 @@ export function VisionPanel({
           setStatusText("已恢复中性状态")
           continue
         }
-        if (
-          effect.type === "reminder" &&
-          (settings?.reminders_enabled ?? true)
-        ) {
+        if (effect.type === "reminder" && remindersEnabledRef.current) {
           toast("回到当前这一步", {
             description:
               observationProfile === "study_paper_v1"
@@ -371,7 +376,6 @@ export function VisionPanel({
       finishActiveEvent,
       observationProfile,
       profile.shortLabel,
-      settings?.reminders_enabled,
     ],
   )
 
@@ -542,6 +546,7 @@ export function VisionPanel({
           inferenceBusyRef.current = false
           pendingFrameRef.current = null
           lastValidAtRef.current = 0
+          lastCloudFrameAtRef.current = 0
           const oldLast = detectorRef.current.lastTimestampMs
           effectsQueueRef.current = effectsQueueRef.current
             .then(() => finishActiveEvent(oldLast ?? undefined))
@@ -620,6 +625,11 @@ export function VisionPanel({
                 },
               )
               detectorRef.current = result.state
+              lastCloudFrameAtRef.current =
+                event.data.observation.usableForCloud === true ||
+                event.data.observation.valid !== false
+                  ? Date.now()
+                  : 0
               const deltaMs = result.state.validCoverageMs - previousCoverage
               if (event.data.observation.valid !== false) {
                 lastValidAtRef.current = Date.now()
@@ -693,6 +703,7 @@ export function VisionPanel({
               inferenceBusyRef.current = false
               pendingFrameRef.current = null
               lastValidAtRef.current = 0
+              lastCloudFrameAtRef.current = 0
               const reset = processObservation(
                 detectorRef.current,
                 {
@@ -917,19 +928,22 @@ export function VisionPanel({
             </div>
             <CloudObservation
               key={sessionId}
-              active={phase === "observing" && !paused}
+              userId={userId}
+              active={
+                (phase === "observing" || phase === "calibrating") && !paused
+              }
               experimentMode={experimentMode}
               agreement={agreement}
               videoRef={videoRef}
-              lastValidAtRef={lastValidAtRef}
-              onCandidate={(ids) => {
+              lastValidAtRef={lastCloudFrameAtRef}
+              onCandidate={(ids, reminderIds) => {
                 void events.refresh?.()
-                if (settings?.reminders_enabled ?? true) {
+                if (remindersEnabledRef.current && reminderIds.length) {
                   toast("核对一下观察约定", {
                     description:
                       "连续两组采样中疑似出现约定外设备使用。请确认、解释或删除，不代表注意力判断。",
                   })
-                  void events.reminder.mutateAsync(ids[0] ?? null)
+                  void events.reminder.mutateAsync(reminderIds[0] ?? null)
                 }
               }}
             />
