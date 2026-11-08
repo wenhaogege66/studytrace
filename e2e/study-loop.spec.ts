@@ -177,7 +177,11 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   await page.getByRole("button", { name: /^返回(?:任务台|学习计划)$/ }).click()
   await expect(page).toHaveURL(/\/app$/)
 
-  await expect(page.getByText("待确认完成", { exact: true })).toBeVisible()
+  await expect(
+    compactRow
+      .getByText("待确认完成", { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible()
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
   await page.getByRole("button", { name: /^确认完成(?:计划)?$/ }).click()
   const completionDialog = page.getByRole("alertdialog", {
@@ -210,7 +214,9 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   const reopenedRow = page
     .getByRole("heading", { name: "完成一次待确认任务", exact: true })
     .locator("xpath=ancestor::*[@data-slot='card'][1]")
-  await expect(reopenedRow.getByText("待继续", { exact: true })).toBeVisible()
+  await expect(
+    reopenedRow.getByText("待继续", { exact: true }).filter({ visible: true }),
+  ).toBeVisible()
   await expect(
     reopenedRow.getByText("0/1 步", { exact: true }).last(),
   ).toBeVisible()
