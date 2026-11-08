@@ -76,6 +76,7 @@ import {
 } from "@/lib/domain"
 
 function sourceLabel(source: BehaviorEvent["source"]) {
+  if (source === "cloud_vision") return "云端采样线索"
   if (source === "vision") return "本地识别"
   if (source === "simulation") return "模拟"
   return "手动"
@@ -93,6 +94,8 @@ function effectiveEventLabel(event: BehaviorEvent) {
   if (type === "not_relevant") return "与本次复盘无关"
   if (type === "face_absent") return "未在画面"
   if (type === "manual") return "手动标记"
+  if (type === "phone_use") return "疑似约定外手机使用"
+  if (type === "tablet_use") return "疑似约定外平板使用"
   const map: Record<string, string> = {
     left: "向左",
     right: "向右",
@@ -145,6 +148,8 @@ function EventCorrectionDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="face_absent">未在画面</SelectItem>
+                <SelectItem value="phone_use">疑似约定外手机使用</SelectItem>
+                <SelectItem value="tablet_use">疑似约定外平板使用</SelectItem>
                 <SelectItem value="head_direction_change">
                   头部方向变化
                 </SelectItem>

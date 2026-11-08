@@ -29,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useExperience } from "@/components/experience/experience-provider"
+import { ConsentSettings } from "@/components/settings/consent-settings"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -178,6 +179,11 @@ export function SettingsScreen() {
         </TabsList>
 
         <TabsContent value="privacy" className="mt-5 space-y-5">
+          <ConsentSettings
+            key={user?.id}
+            userId={user?.id}
+            isAnonymous={user?.is_anonymous !== false}
+          />
           <Card className="border-indigo-100 bg-white/90">
             <CardHeader>
               <CardTitle>数据用途清单</CardTitle>
@@ -204,7 +210,7 @@ export function SettingsScreen() {
                   icon: Sparkles,
                   title: "按需发送给 AI",
                   description:
-                    "仅在你点击“AI 生成 3 步”时，将任务标题和预计时长发送给阿里云百炼；不发送摄像头、视觉事件或已有学习记录。",
+                    "规划时发送学习意图与选项；可选云端过程观察发送短时压缩图像，可选 AI 学习报告只发送本人聚合记录。三类用途分别说明，观察与报告需主动授权。",
                 },
                 {
                   icon: ShieldCheck,

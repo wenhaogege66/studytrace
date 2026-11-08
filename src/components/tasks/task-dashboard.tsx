@@ -227,7 +227,7 @@ function TaskDialog({
       .filter((step) => step.title.trim())
       .map((step) => ({ ...step, title: step.title.trim() }))
     if (!draft.title.trim()) {
-      toast.error("请先写下任务标题")
+      toast.error("请先写下学习计划标题")
       return
     }
     if (!cleanSteps.length) {
@@ -243,12 +243,12 @@ function TaskDialog({
 
   const suggestPlan = async () => {
     if (task) {
-      toast.info("AI 初稿只在新建任务时生成，避免覆盖已有完成进度")
+      toast.info("AI 初稿只在制定计划时生成，避免覆盖已有完成进度")
       return
     }
     const title = draft.title.trim()
     if (!title) {
-      toast.info("先写下任务标题，AI 才能帮你拆步骤")
+      toast.info("先写下学习计划标题，AI 才能帮你拆步骤")
       return
     }
     if (!validEstimate) {
@@ -318,7 +318,9 @@ function TaskDialog({
           onSubmit={(event) => void submit(event)}
         >
           <DialogHeader className="shrink-0 px-4 pt-4 pr-12 sm:px-6 sm:pt-5 sm:pr-12">
-            <DialogTitle>{task ? "编辑任务" : "创建一项具体任务"}</DialogTitle>
+            <DialogTitle>
+              {task ? "编辑学习计划" : "创建一项具体学习计划"}
+            </DialogTitle>
             <DialogDescription>
               写下标题，让 AI 先给出三步初稿；每一步都可以继续修改。
             </DialogDescription>
@@ -326,7 +328,7 @@ function TaskDialog({
 
           <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             <div className="space-y-2">
-              <Label htmlFor="task-title">任务标题</Label>
+              <Label htmlFor="task-title">学习计划标题</Label>
               <Input
                 id="task-title"
                 autoFocus
@@ -349,7 +351,7 @@ function TaskDialog({
                 <div className="flex items-center gap-1">
                   {task ? (
                     <span className="px-2 text-xs text-slate-500">
-                      AI 初稿仅用于新建任务
+                      AI 初稿仅用于制定计划
                     </span>
                   ) : (
                     <Button
@@ -427,13 +429,13 @@ function TaskDialog({
               {!task ? (
                 <p className="text-xs leading-5 text-slate-500">
                   点击“AI 生成 3
-                  步”会将任务标题和预计时长发送给阿里云百炼；不会发送摄像头画面或视觉数据。生成期间会暂时锁定表单；关闭弹窗后，返回结果不会写入任务。
+                  步”会将学习计划标题和预计时长发送给阿里云百炼；不会发送摄像头画面或视觉数据。生成期间会暂时锁定表单；关闭弹窗后，返回结果不会写入学习计划。
                 </p>
               ) : null}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="observation-profile">任务观察方式</Label>
+              <Label htmlFor="observation-profile">学习计划观察方式</Label>
               <Select
                 value={draft.observationProfile}
                 disabled={suggesting || profileLocked}
@@ -463,7 +465,7 @@ function TaskDialog({
                 {profileReason ? `AI 建议：${profileReason}。` : null}
                 {getObservationProfile(draft.observationProfile).description}
                 {profileLocked
-                  ? " 当前任务有一段未结束的学习，观察方式会保持为该 session 开始时的快照；结束本次学习后可修改。"
+                  ? " 当前学习计划有一段未结束的学习，观察方式会保持为该 session 开始时的快照；结束本次学习后可修改。"
                   : " 你可以修改，AI 不会接收摄像头画面。"}
               </p>
             </div>
@@ -521,7 +523,7 @@ function TaskDialog({
             </Button>
             <Button type="submit" disabled={saving || suggesting}>
               {saving ? <LoaderCircle className="animate-spin" /> : <Check />}
-              {task ? "保存修改" : "创建任务"}
+              {task ? "保存修改" : "制定计划"}
             </Button>
           </DialogFooter>
         </form>
@@ -578,8 +580,8 @@ function TaskRow({
       className={`overflow-hidden border-indigo-100 bg-white/92 py-0 transition-[border-color,background-color] hover:border-indigo-200 ${completed ? "bg-slate-50/85" : ""}`}
     >
       <CardContent className="p-0">
-        <div className="grid min-h-32 gap-x-4 gap-y-3 p-3.5 sm:min-h-24 sm:grid-cols-[auto_minmax(0,1fr)_10rem_auto] sm:items-center sm:gap-x-5 sm:py-3">
-          <div className="flex items-center gap-2 sm:flex-col sm:gap-1.5">
+        <div className="grid min-h-32 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 p-3.5 sm:min-h-24 sm:grid-cols-[auto_minmax(0,1fr)_10rem_auto] sm:gap-x-5 sm:py-3">
+          <div className="hidden items-center gap-2 sm:flex sm:flex-col sm:gap-1.5">
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-50">
               <TaskStateIcon status={displayStatus} />
             </span>
@@ -609,7 +611,10 @@ function TaskRow({
                   ? `下一步 · ${nextStep.title}`
                   : getObservationProfile(task.observation_profile).shortLabel}
             </p>
-            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 sm:hidden">
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 sm:hidden">
+              <Badge variant="outline" className={status.className}>
+                {status.label}
+              </Badge>
               <span>
                 {completedSteps}/{task.steps.length} 步
               </span>
@@ -633,13 +638,17 @@ function TaskRow({
               </span>
               <span>{Math.round(progress)}%</span>
             </div>
-            <Progress value={progress} className="mt-2 h-1.5" />
+            <Progress
+              value={progress}
+              className="mt-2 h-1.5"
+              aria-label={`学习计划“${task.title}”步骤完成进度`}
+            />
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
               <Clock3 className="size-3.5" /> 预计 {task.estimated_minutes} 分钟
             </p>
           </div>
 
-          <div className="col-span-full flex items-center justify-end gap-1 sm:col-span-1">
+          <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 sm:col-start-auto sm:row-start-auto">
             {readyToComplete ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -649,24 +658,27 @@ function TaskRow({
                     ) : (
                       <CheckCircle2 />
                     )}
-                    确认完成
+                    确认完成计划
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      确认完成“{task.title}”？
-                    </AlertDialogTitle>
+                    <AlertDialogTitle>确认完成这个学习计划？</AlertDialogTitle>
                     <AlertDialogDescription>
                       {sessionState === "current"
-                        ? "这会结束当前学习记录，保存计时并将任务移到“已完成”。复盘可以稍后再做。"
-                        : "任务会移到“已完成”，不会再出现“开始学习”。"}
+                        ? "这会结束当前学习记录，保存计时并将学习计划移到“已完成”。复盘可以稍后再做。"
+                        : "学习计划会移到“已完成”，不会再出现“开始学习”。"}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
+                  <p className="rounded-xl bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+                    <strong>完成标准：</strong>
+                    {task.completion_criterion ||
+                      "由你确认学习目的已达到；系统不会自动判断是否学会。"}
+                  </p>
                   <AlertDialogFooter>
                     <AlertDialogCancel>继续保留</AlertDialogCancel>
                     <AlertDialogAction onClick={() => void onComplete()}>
-                      确认完成
+                      确认完成计划
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -684,7 +696,7 @@ function TaskRow({
                 }
                 title={
                   sessionState === "blocked"
-                    ? "请先结束当前学习会话"
+                    ? "请先结束当前本次学习"
                     : undefined
                 }
               >
@@ -707,7 +719,7 @@ function TaskRow({
               variant="ghost"
               size="icon"
               className="size-11 sm:size-9"
-              aria-label={expanded ? "收起任务详情" : "展开任务详情"}
+              aria-label={expanded ? "收起学习计划详情" : "展开学习计划详情"}
               aria-expanded={expanded}
               onClick={() => setExpanded((current) => !current)}
             >
@@ -720,7 +732,7 @@ function TaskRow({
                   variant="ghost"
                   size="icon"
                   className="size-11 sm:size-9"
-                  aria-label="任务操作"
+                  aria-label="学习计划操作"
                 >
                   <Ellipsis />
                 </Button>
@@ -728,7 +740,7 @@ function TaskRow({
               <DropdownMenuContent align="end">
                 {!completed && !archived ? (
                   <DropdownMenuItem onSelect={onEdit}>
-                    <Pencil /> 编辑任务
+                    <Pencil /> 编辑学习计划
                   </DropdownMenuItem>
                 ) : null}
                 {completed ? (
@@ -737,7 +749,7 @@ function TaskRow({
                       <DropdownMenuItem
                         onSelect={(event) => event.preventDefault()}
                       >
-                        <RotateCcw /> 重新打开任务
+                        <RotateCcw /> 重新打开学习计划
                       </DropdownMenuItem>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -746,7 +758,7 @@ function TaskRow({
                           重新打开“{task.title}”？
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          任务会回到待继续，最后一步会重新打开；既有学习和复盘记录不会被删除。
+                          学习计划会回到待继续，最后一步会重新打开；既有学习和复盘记录不会被删除。
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -767,14 +779,14 @@ function TaskRow({
                     ) : (
                       <RotateCcw />
                     )}
-                    {statusChanging ? "正在恢复…" : "恢复到任务台"}
+                    {statusChanging ? "正在恢复…" : "恢复到学习计划"}
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem
                   disabled={statusChanging}
                   onSelect={() => void onDuplicate()}
                 >
-                  <Copy /> 复制为新任务
+                  <Copy /> 复制为新学习计划
                 </DropdownMenuItem>
                 {!completed && !archived ? (
                   <DropdownMenuItem
@@ -783,8 +795,8 @@ function TaskRow({
                   >
                     <Archive />
                     {sessionState === "current"
-                      ? "学习会话进行中，无法归档"
-                      : "归档任务"}
+                      ? "本次学习进行中，无法归档"
+                      : "归档学习计划"}
                   </DropdownMenuItem>
                 ) : null}
                 <AlertDialog>
@@ -796,15 +808,15 @@ function TaskRow({
                     >
                       <Trash2 />
                       {sessionState === "current"
-                        ? "学习会话进行中，无法删除"
-                        : "删除任务"}
+                        ? "本次学习进行中，无法删除"
+                        : "删除学习计划"}
                     </DropdownMenuItem>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>删除“{task.title}”？</AlertDialogTitle>
                       <AlertDialogDescription>
-                        任务、关联学习会话、观察事件和复盘会被永久删除，无法恢复。
+                        学习计划、关联本次学习、观察事件和复盘会被永久删除，无法恢复。
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -826,7 +838,7 @@ function TaskRow({
         {expanded ? (
           <div className="grid gap-5 border-t border-indigo-100 bg-slate-50/60 px-4 py-4 md:grid-cols-[minmax(0,1.4fr)_minmax(15rem,0.6fr)]">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">任务步骤</h3>
+              <h3 className="text-sm font-semibold text-slate-900">执行步骤</h3>
               <ol className="mt-2 grid gap-2 sm:grid-cols-2">
                 {task.steps.map((step, index) => (
                   <li
@@ -981,7 +993,7 @@ export function TaskDashboard() {
       if (editingTask)
         await mutations.update.mutateAsync({ taskId: editingTask.id, draft })
       else await mutations.create.mutateAsync(draft)
-      toast.success(editingTask ? "任务已更新" : "任务已创建")
+      toast.success(editingTask ? "学习计划已更新" : "学习计划已创建")
       setDialogOpen(false)
       setEditingTask(null)
     } catch (error) {
@@ -994,8 +1006,8 @@ export function TaskDashboard() {
     if (!task || !canStartTaskNow(task)) {
       toast.info(
         task && areTaskStepsComplete(task.steps)
-          ? "全部步骤已完成，请先确认完成任务"
-          : "已完成或已归档的任务不能直接开始",
+          ? "全部步骤已完成，请先确认完成学习计划"
+          : "已完成或已归档的学习计划不能直接开始",
       )
       return
     }
@@ -1022,7 +1034,7 @@ export function TaskDashboard() {
     successMessage: string,
   ) => {
     if (status === "archived" && activeSession.data?.task_id === taskId) {
-      toast.info("当前学习会话结束前不能归档任务")
+      toast.info("当前本次学习结束前不能归档学习计划")
       return
     }
     setStatusChangingTaskId(taskId)
@@ -1030,7 +1042,9 @@ export function TaskDashboard() {
       await mutations.setStatus.mutateAsync({ taskId, status })
       toast.success(successMessage)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "任务状态更新失败")
+      toast.error(
+        error instanceof Error ? error.message : "学习计划状态更新失败",
+      )
     } finally {
       setStatusChangingTaskId(null)
     }
@@ -1038,7 +1052,7 @@ export function TaskDashboard() {
 
   const confirmTask = async (task: Task) => {
     if (!areTaskStepsComplete(task.steps)) {
-      toast.info("请先完成所有任务步骤")
+      toast.info("请先完成所有执行步骤")
       return
     }
     const linkedSession =
@@ -1049,7 +1063,7 @@ export function TaskDashboard() {
         taskId: task.id,
         accumulatedSeconds: linkedSession?.accumulated_seconds,
       })
-      toast.success("任务已完成", {
+      toast.success("学习计划已完成", {
         description: "已移入“已完成”，不会再重新开始。",
         action: linkedSession
           ? {
@@ -1072,7 +1086,7 @@ export function TaskDashboard() {
     setStatusChangingTaskId(task.id)
     try {
       await mutations.reopen.mutateAsync(task.id)
-      toast.success("任务已重新打开", {
+      toast.success("学习计划已重新打开", {
         description: "最后一步已恢复为待完成，既有记录保留不变。",
       })
     } catch (error) {
@@ -1087,11 +1101,11 @@ export function TaskDashboard() {
     try {
       await mutations.duplicate.mutateAsync(task)
       setTaskView("active")
-      toast.success("已复制为新任务", {
-        description: "新任务的所有步骤均从未完成开始。",
+      toast.success("已复制为新学习计划", {
+        description: "新学习计划的所有步骤均从未完成开始。",
       })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "复制任务失败")
+      toast.error(error instanceof Error ? error.message : "复制学习计划失败")
     } finally {
       setStatusChangingTaskId(null)
     }
@@ -1099,7 +1113,7 @@ export function TaskDashboard() {
 
   if (tasks.isLoading) {
     return (
-      <div className="space-y-5" aria-label="正在读取任务">
+      <div className="space-y-5" aria-label="正在读取学习计划">
         <Skeleton className="h-16 w-80 max-w-full" />
         <Skeleton className="h-20 w-full rounded-2xl" />
         <div className="space-y-3">
@@ -1115,7 +1129,7 @@ export function TaskDashboard() {
     return (
       <Card className="mx-auto max-w-xl">
         <CardHeader>
-          <CardTitle>任务暂时没有加载出来</CardTitle>
+          <CardTitle>学习计划暂时没有加载出来</CardTitle>
           <CardDescription>{tasks.error.message}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -1133,7 +1147,7 @@ export function TaskDashboard() {
             今天，先完成哪一件具体的事？
           </h1>
           <p className="mt-3 text-slate-600">
-            把“大任务”拆成下一步，计时才真正有方向。
+            把一个学习目的，变成眼前可执行的下一步。
           </p>
         </div>
         <div className="flex gap-2">
@@ -1142,7 +1156,7 @@ export function TaskDashboard() {
             onClick={() =>
               void mutations.sample
                 .mutateAsync()
-                .then(() => toast.success("示例任务已载入"))
+                .then(() => toast.success("示例学习计划已载入"))
                 .catch((error) => toast.error(error.message))
             }
             disabled={mutations.sample.isPending}
@@ -1193,7 +1207,7 @@ export function TaskDashboard() {
       ) : null}
 
       <section
-        aria-label="任务概览"
+        aria-label="学习计划概览"
         className="mt-7 grid grid-cols-3 divide-x divide-indigo-100 rounded-2xl border border-indigo-100 bg-white/80 px-2 py-4 sm:px-5"
       >
         {[
@@ -1272,8 +1286,8 @@ export function TaskDashboard() {
                     className="w-full pl-9 sm:w-60"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="搜索任务或步骤"
-                    aria-label="搜索任务或步骤"
+                    placeholder="搜索学习计划或步骤"
+                    aria-label="搜索学习计划或步骤"
                   />
                 </div>
                 <Select
@@ -1284,7 +1298,7 @@ export function TaskDashboard() {
                 >
                   <SelectTrigger
                     className="w-full sm:w-36"
-                    aria-label="任务排序"
+                    aria-label="学习计划排序"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -1337,20 +1351,20 @@ export function TaskDashboard() {
                         changeTaskStatus(
                           task.id,
                           "planned",
-                          "任务已恢复到任务台",
+                          "已恢复为待完成计划",
                         )
                       }
                       onArchive={() =>
-                        changeTaskStatus(task.id, "archived", "任务已归档")
+                        changeTaskStatus(task.id, "archived", "学习计划已归档")
                       }
                       onDelete={async () => {
                         if (activeSession.data?.task_id === task.id) {
-                          toast.info("当前学习会话结束前不能删除任务")
+                          toast.info("当前本次学习结束前不能删除学习计划")
                           return
                         }
                         try {
                           await mutations.remove.mutateAsync(task.id)
-                          toast.success("任务与关联记录已删除")
+                          toast.success("学习计划与关联记录已删除")
                         } catch (error) {
                           toast.error(
                             error instanceof Error ? error.message : "删除失败",
@@ -1368,7 +1382,7 @@ export function TaskDashboard() {
                     <>
                       <Search className="mx-auto size-7 text-slate-400" />
                       <h2 className="mt-4 font-semibold text-slate-900">
-                        没有找到匹配任务
+                        没有找到匹配学习计划
                       </h2>
                       <Button
                         className="mt-4"
@@ -1383,32 +1397,32 @@ export function TaskDashboard() {
                     <>
                       <CheckCircle2 className="mx-auto size-7 text-emerald-500" />
                       <h2 className="mt-4 font-semibold text-slate-900">
-                        还没有已完成任务
+                        还没有已完成学习计划
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        完成的任务会留在这里，不会再出现“开始学习”。
+                        完成的学习计划会留在这里，不会再出现“开始学习”。
                       </p>
                     </>
                   ) : taskView === "archived" ? (
                     <>
                       <Archive className="mx-auto size-7 text-slate-400" />
                       <h2 className="mt-4 font-semibold text-slate-900">
-                        还没有归档任务
+                        还没有归档学习计划
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        暂时不推进的任务可以放在这里，并随时恢复。
+                        暂时不推进的学习计划可以放在这里，并随时恢复。
                       </p>
                     </>
                   ) : (
                     <>
                       <ListPlus className="mx-auto size-7 text-indigo-500" />
                       <h2 className="mt-4 font-semibold text-slate-900">
-                        当前没有待完成任务
+                        当前没有待完成学习计划
                       </h2>
                       <p className="mt-1 text-sm text-slate-500">
                         {taskGroups.archived.length > 0
-                          ? `${taskGroups.archived.length} 个任务已归档，可以随时恢复到任务台。`
-                          : "新建一项任务，从下一个可执行步骤开始。"}
+                          ? `${taskGroups.archived.length} 个学习计划已归档，可以随时恢复到学习计划。`
+                          : "新建一项学习计划，从下一个可执行步骤开始。"}
                       </p>
                       <div className="mt-4 flex justify-center gap-2">
                         {taskGroups.archived.length > 0 ? (
@@ -1436,10 +1450,10 @@ export function TaskDashboard() {
                 <ListPlus className="size-7" />
               </span>
               <h2 className="mt-5 text-xl font-semibold text-slate-950">
-                任务台还是空的
+                学习计划还是空的
               </h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-                创建自己的任务，或主动载入两条不会包含真实课程数据的示例。
+                创建自己的学习计划，或主动载入两条不会包含真实课程数据的示例。
               </p>
               <div className="mt-6 flex justify-center gap-2">
                 <Button

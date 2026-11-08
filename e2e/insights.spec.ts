@@ -1,0 +1,242 @@
+import { expect, test } from "@playwright/test"
+
+import { installMockSupabase } from "./mock-supabase"
+import { createManualPlan } from "./plan-actions"
+
+test.describe.configure({ mode: "serial" })
+
+test("长期洞察对空样本说明收集门槛", async ({ page }) => {
+  await installMockSupabase(page)
+  await page.goto("/app/insights")
+
+  await expect(
+    page.getByRole("heading", { name: "你实际是怎么投入时间的" }),
+  ).toBeVisible()
+  await expect(page.getByText("当前窗口还没有有效投入片段")).toBeVisible()
+  await expect(page.getByText("先继续记录，不急着下结论")).toBeVisible()
+  await expect(page.getByText(/近 30 天的证据池/)).toBeVisible()
+})
+
+test("长期洞察在样本不足时展示事实与收集缺口", async ({ page }) => {
+  await installMockSupabase(page, {
+    insightsReport: {
+      enabled: true,
+      generated_at: "2026-09-08T08:00:00.000Z",
+      data_coverage: {
+        complete: true,
+        global_truncated: false,
+        period_complete: true,
+        recommendation_evidence_complete: true,
+        first_truncated_at: null,
+        last_truncated_at: null,
+        dropped_counts: {},
+      },
+      overview: {
+        active_days: 3,
+        completed_tasks: 1,
+        actual_seconds: 3600,
+        reviewed_sessions: 2,
+        terminal_sessions: 3,
+        review_coverage_percent: 66.7,
+      },
+      segments: {
+        eligible_count: 6,
+        median_seconds: 600,
+        backfilled_count: 0,
+        distribution: [{ id: "under_15", label: "2–15 分钟", count: 6 }],
+      },
+      time_buckets: [
+        {
+          id: "morning",
+          label: "早晨 05–11",
+          segment_count: 6,
+          actual_seconds: 3600,
+          reviewed_count: 2,
+          average_rating: 4,
+          outcome_count: 3,
+          completion_percent: 33.3,
+        },
+      ],
+      observation: {
+        observed_seconds: 600,
+        coverage_percent: 16.7,
+        confirmed_event_count: 1,
+        confirmed_events_per_hour: 6,
+        reminder_responses: {
+          none: 0,
+          dismissed: 0,
+          back_to_task: 1,
+          normal_activity: 0,
+          not_needed: 0,
+          later: 0,
+        },
+      },
+      precursor: {
+        evidence_window_days: 30,
+        manual_marker_count: 2,
+        correlated_marker_count: 1,
+        correlated_percent: 50,
+      },
+      readiness: {
+        evidence_window_days: 30,
+        evidence_eligible_segments: 6,
+        evidence_active_days: 3,
+        evidence_median_seconds: 600,
+        patterns_ready: false,
+        required_segments: 20,
+        required_active_days: 10,
+        precursor_ready: false,
+        required_manual_markers: 10,
+      },
+    },
+  })
+  await page.goto("/app/insights")
+
+  const summary = page.getByLabel("本期摘要")
+  await expect(summary.getByText("1 小时")).toBeVisible()
+  await expect(summary.getByText("6 个有效片段")).toBeVisible()
+  await expect(page.getByText("先继续记录，不急着下结论")).toBeVisible()
+  await expect(page.getByText(/14 个有效投入片段、7 个活跃日/)).toBeVisible()
+  await expect(page.getByText("形成建议所需样本")).toBeVisible()
+  await expect(
+    page.getByText(/前置信号共现收集进度：已主动标记 2\/10 次/),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("progressbar", { name: "形成建议所需样本" }),
+  ).toHaveAttribute("aria-valuenow", "30")
+  await expect(
+    page.getByRole("heading", { name: /下一阶段可尝试/ }),
+  ).toHaveCount(0)
+})
+
+test("长期洞察展示可追溯的完成、观察与提醒事实", async ({ page }) => {
+  await installMockSupabase(page, {
+    insightsReport: {
+      enabled: true,
+      generated_at: "2026-09-08T08:00:00.000Z",
+      data_coverage: {
+        complete: true,
+        global_truncated: false,
+        period_complete: true,
+        recommendation_evidence_complete: true,
+        first_truncated_at: null,
+        last_truncated_at: null,
+        dropped_counts: {},
+      },
+      overview: {
+        active_days: 12,
+        completed_tasks: 4,
+        actual_seconds: 32400,
+        reviewed_sessions: 8,
+        terminal_sessions: 10,
+        review_coverage_percent: 80,
+      },
+      segments: {
+        eligible_count: 24,
+        median_seconds: 2400,
+        backfilled_count: 0,
+        distribution: [{ id: "30_45", label: "30–45 分钟", count: 24 }],
+      },
+      time_buckets: [
+        {
+          id: "morning",
+          label: "早晨 05–11",
+          segment_count: 12,
+          actual_seconds: 18000,
+          reviewed_count: 4,
+          average_rating: 4.5,
+          outcome_count: 4,
+          completion_percent: 75,
+        },
+      ],
+      observation: {
+        observed_seconds: 3600,
+        coverage_percent: 11.1,
+        confirmed_event_count: 2,
+        confirmed_events_per_hour: 2,
+        reminder_responses: {
+          none: 1,
+          dismissed: 0,
+          back_to_task: 2,
+          normal_activity: 1,
+          not_needed: 0,
+          later: 1,
+        },
+      },
+      precursor: {
+        evidence_window_days: 30,
+        manual_marker_count: 10,
+        correlated_marker_count: 4,
+        correlated_percent: 40,
+      },
+      readiness: {
+        evidence_window_days: 30,
+        evidence_eligible_segments: 24,
+        evidence_active_days: 12,
+        evidence_median_seconds: 2400,
+        patterns_ready: true,
+        required_segments: 20,
+        required_active_days: 10,
+        precursor_ready: true,
+        required_manual_markers: 10,
+      },
+    },
+  })
+  await page.goto("/app/insights")
+
+  await expect(page.getByText("完成 75% · 4 次结束会话")).toBeVisible()
+  await expect(page.getByText("2/小时")).toBeVisible()
+  await expect(page.getByText("确认事件率")).toBeVisible()
+  await expect(page.getByText("轻提醒后的反馈")).toBeVisible()
+  await expect(page.getByText(/10 次主动标记中/)).toBeVisible()
+  await expect(page.getByText("暂不比较时段", { exact: false })).toBeVisible()
+  await expect(page.getByText("相对更高", { exact: false })).toHaveCount(0)
+
+  await page.getByRole("button", { name: "近 7 天" }).click()
+  await expect(page.getByText("当前 7 天窗口")).toBeVisible()
+})
+
+test("事实记录被截断时明确提示且不生成个性化建议", async ({ page }) => {
+  await installMockSupabase(page, { insightsTruncated: true })
+  await page.goto("/app/insights")
+
+  await expect(page.getByText("这份汇总包含不完整的历史区间")).toBeVisible()
+  await expect(page.getByText("部分历史未被记录，暂不生成建议")).toBeVisible()
+})
+
+test("移动端洞察与任务主操作保持紧凑且可触达", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await installMockSupabase(page)
+  await page.goto("/app/insights")
+
+  await expect(page.getByRole("main")).toBeVisible()
+  await expect(
+    page.getByLabel("本期摘要").getByText("0 分钟", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("progressbar", { name: "形成建议所需样本" }),
+  ).toHaveAttribute("aria-valuenow", "0")
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("本期摘要")
+        .evaluate(
+          (element) =>
+            getComputedStyle(element).gridTemplateColumns.split(" ").length,
+        ),
+    )
+    .toBe(2)
+
+  for (const label of ["近 7 天", "近 30 天"]) {
+    const box = await page.getByRole("button", { name: label }).boundingBox()
+    expect(box?.height).toBeGreaterThanOrEqual(44)
+  }
+
+  await page.goto("/app")
+  await createManualPlan(page, "验证移动端任务操作", ["完成一次触控验收"])
+
+  for (const label of ["开始学习", "待完成 1", "已完成 0", "已归档 0"]) {
+    const box = await page.getByRole("button", { name: label }).boundingBox()
+    expect(box?.height).toBeGreaterThanOrEqual(44)
+  }
+})

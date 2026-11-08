@@ -1,4 +1,4 @@
-import type { BehaviorEventType, EventDirection } from "@/lib/domain"
+import type { EventDirection } from "@/lib/domain"
 import type { VisionDetectionPolicy } from "@/lib/vision/profiles"
 
 export type VisionObservation = {
@@ -6,6 +6,10 @@ export type VisionObservation = {
   facePresent: boolean
   yaw: number | null
   pitch: number | null
+  valid?: boolean
+  personCount?: number
+  phoneVisible?: boolean
+  usableForCloud?: boolean
 }
 
 export type VisionThresholds = {
@@ -19,7 +23,7 @@ export type VisionThresholds = {
   pitchDegrees: number
 }
 
-export type DetectionKind = Exclude<BehaviorEventType, "manual">
+export type DetectionKind = "face_absent" | "head_direction_change"
 
 export type DetectionSignal = {
   kind: DetectionKind
@@ -34,6 +38,8 @@ type ActiveDetection = DetectionSignal & {
 }
 
 export type DetectorState = {
+  lastTimestampMs: number | null
+  validCoverageMs: number
   calibrationStartedAtMs: number | null
   calibrationYaw: number[]
   calibrationPitch: number[]
@@ -96,6 +102,8 @@ export const DEFAULT_DETECTION_POLICY: VisionDetectionPolicy = {
 
 export function createDetectorState(): DetectorState {
   return {
+    lastTimestampMs: null,
+    validCoverageMs: 0,
     calibrationStartedAtMs: null,
     calibrationYaw: [],
     calibrationPitch: [],
@@ -252,6 +260,36 @@ export function processObservation(
   }
   const effects: DetectorEffect[] = []
 
+  const gap =
+    state.lastTimestampMs === null
+      ? 0
+      : observation.timestampMs - state.lastTimestampMs
+  // Missing/invalid samples never bridge an unobserved interval. Close at the
+  // last successful frame rather than claiming that the gap was observed.
+  const valid =
+    observation.valid !== false &&
+    Number.isFinite(observation.timestampMs) &&
+    (!observation.facePresent ||
+      (Number.isFinite(observation.yaw) && Number.isFinite(observation.pitch)))
+  if (!valid || gap < 0 || gap > 1_000) {
+    if (state.active)
+      effects.push({
+        type: "event_ended",
+        atMs: state.lastTimestampMs ?? observation.timestampMs,
+        kind: state.active.kind,
+        direction: state.active.direction,
+      })
+    state.active = null
+    state.candidate = null
+    state.calibrationStartedAtMs = null
+    state.calibrationYaw = []
+    state.calibrationPitch = []
+    state.lastTimestampMs = valid ? observation.timestampMs : null
+    return { state, effects }
+  }
+  state.lastTimestampMs = observation.timestampMs
+  if (gap > 0) state.validCoverageMs += gap
+
   if (!state.calibrated) {
     const hasValidPose =
       observation.facePresent &&
@@ -279,11 +317,28 @@ export function processObservation(
     state.calibrationStartedAtMs ??= observation.timestampMs
     state.calibrationYaw.push(observation.yaw as number)
     state.calibrationPitch.push(observation.pitch as number)
+    if (
+      Math.max(...state.calibrationYaw) - Math.min(...state.calibrationYaw) >
+        10 ||
+      Math.max(...state.calibrationPitch) -
+        Math.min(...state.calibrationPitch) >
+        10
+    ) {
+      state.calibrationStartedAtMs = observation.timestampMs
+      state.calibrationYaw = [observation.yaw as number]
+      state.calibrationPitch = [observation.pitch as number]
+    }
 
     if (
       observation.timestampMs - state.calibrationStartedAtMs >=
         config.calibrationMs &&
-      state.calibrationYaw.length >= 2
+      state.calibrationYaw.length >=
+        Math.max(4, Math.ceil(config.calibrationMs / 400)) &&
+      Math.max(...state.calibrationYaw) - Math.min(...state.calibrationYaw) <=
+        10 &&
+      Math.max(...state.calibrationPitch) -
+        Math.min(...state.calibrationPitch) <=
+        10
     ) {
       state.baselineYaw = median(state.calibrationYaw)
       state.baselinePitch = median(state.calibrationPitch)

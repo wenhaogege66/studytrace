@@ -59,6 +59,19 @@ export function createTimerState(
   return { ...state, displaySeconds: elapsedSeconds(state, nowMs) }
 }
 
+export function reconcileRunningCheckpoint(
+  session: StudySession,
+  requestedAccumulatedSeconds: number,
+  nowMs = Date.now(),
+) {
+  return {
+    state: createTimerState(session, nowMs),
+    interrupted:
+      session.status === "running" &&
+      session.accumulated_seconds < requestedAccumulatedSeconds,
+  }
+}
+
 export function timerReducer(
   state: TimerState,
   action: TimerAction,

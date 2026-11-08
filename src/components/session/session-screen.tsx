@@ -60,9 +60,13 @@ import {
   createRunningCheckpoint,
   createTimerState,
   elapsedSeconds,
+  reconcileRunningCheckpoint,
   timerReducer,
   type TimerState,
 } from "@/lib/session/timer"
+import { useCheckpointHeartbeat } from "@/lib/session/use-checkpoint-heartbeat"
+import { getSupabase } from "@/lib/supabase/client"
+import { createCoverageBuffer } from "@/lib/vision/coverage-buffer"
 
 const VisionPanel = dynamic(
   () =>
@@ -79,6 +83,8 @@ function eventLabel(event: BehaviorEvent) {
   if (event.source === "simulation") return "模拟事件"
   if (event.event_type === "face_absent") return "未在画面"
   if (event.event_type === "manual") return "手动标记"
+  if (event.event_type === "phone_use") return "疑似约定外手机使用 · 待你核对"
+  if (event.event_type === "tablet_use") return "疑似约定外平板使用 · 待你核对"
   const directions: Record<string, string> = {
     left: "向左",
     right: "向右",
@@ -119,9 +125,29 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const persistedResumedAtRef = useRef<string | null>(null)
   const stateVersionRef = useRef(0)
   const cameraVersionRef = useRef(0)
+  const [coverageBuffer] = useState(createCoverageBuffer)
+  const flushCoverage = () =>
+    coverageBuffer
+      .flush(async (sequence, validMs) => {
+        const { error } = await getSupabase().rpc(
+          "record_observation_coverage",
+          {
+            p_session_id: sessionId,
+            p_expected_state_version: stateVersionRef.current,
+            p_camera_version: cameraVersionRef.current,
+            p_sequence: sequence,
+            p_valid_milliseconds: validMs,
+          },
+        )
+        if (error) throw new Error("观察覆盖暂未同步")
+      })
+      .catch(() => undefined)
+  const checkpointInFlightRef = useRef(false)
+  const interruptionNotifiedRef = useRef(false)
   const screenMountedRef = useRef(false)
   const pauseSessionRef = useRef(sessionMutations.pause.mutateAsync)
   const terminalNavigationRef = useRef(false)
+  const confirmedTerminalRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
   const [finishDialogOpen, setFinishDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
@@ -130,6 +156,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   useLayoutEffect(() => {
     timerRef.current = timer
   }, [timer])
+  useLayoutEffect(() => {
+    if (
+      sessionQuery.data?.status === "completed" ||
+      sessionQuery.data?.status === "cancelled"
+    )
+      confirmedTerminalRef.current = true
+  }, [sessionQuery.data?.status])
 
   useEffect(() => {
     pauseSessionRef.current = sessionMutations.pause.mutateAsync
@@ -146,7 +179,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       cameraVersionRef.current,
       sessionQuery.data.camera_version,
     )
-    dispatch({ type: "restore", state: createTimerState(sessionQuery.data) })
+    const restoredTimer = createTimerState(sessionQuery.data)
+    timerRef.current = restoredTimer
+    dispatch({ type: "restore", state: restoredTimer })
   }, [sessionQuery.data])
 
   useEffect(() => {
@@ -158,41 +193,59 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     return () => clearInterval(interval)
   }, [timer?.mode])
 
-  useEffect(() => {
-    const persist = () => {
+  useCheckpointHeartbeat(
+    async () => {
       const current = timerRef.current
       if (
-        document.visibilityState !== "hidden" ||
         !current ||
-        current.mode !== "running"
+        current.mode !== "running" ||
+        checkpointInFlightRef.current
       )
         return
-      const now = Date.now()
-      const checkpoint = createRunningCheckpoint(current, now)
+      const checkpoint = createRunningCheckpoint(current, Date.now())
       const expectedResumedAt = persistedResumedAtRef.current
       if (!checkpoint || !expectedResumedAt) return
-      void sessionMutations.checkpoint
-        .mutateAsync({
+      checkpointInFlightRef.current = true
+      try {
+        const saved = await sessionMutations.checkpoint.mutateAsync({
           sessionId,
           expectedResumedAt,
           accumulatedSeconds: checkpoint.accumulatedSeconds,
           checkpointedAt: checkpoint.resumedAt,
         })
-        .then((saved) => {
-          if (saved.state_version < stateVersionRef.current) return
-          stateVersionRef.current = saved.state_version
-          cameraVersionRef.current = Math.max(
-            cameraVersionRef.current,
-            saved.camera_version,
+        if (saved.state_version < stateVersionRef.current) return
+        stateVersionRef.current = saved.state_version
+        cameraVersionRef.current = Math.max(
+          cameraVersionRef.current,
+          saved.camera_version,
+        )
+        if (saved.status === "running" && saved.resumed_at) {
+          persistedResumedAtRef.current = saved.resumed_at
+          const reconciled = reconcileRunningCheckpoint(
+            saved,
+            checkpoint.accumulatedSeconds,
           )
-          if (saved.status === "running" && saved.resumed_at)
-            persistedResumedAtRef.current = saved.resumed_at
-        })
-        .catch(() => undefined)
-    }
-    document.addEventListener("visibilitychange", persist)
-    return () => document.removeEventListener("visibilitychange", persist)
-  }, [sessionId, sessionMutations.checkpoint])
+          timerRef.current = reconciled.state
+          dispatch({ type: "restore", state: reconciled.state })
+          if (reconciled.interrupted && !interruptionNotifiedRef.current) {
+            interruptionNotifiedRef.current = true
+            toast.info("已从当前继续计时", {
+              description: "检测到较长中断，离线时段没有计入学习时长。",
+            })
+          }
+        }
+      } catch {
+        // A missed checkpoint only makes aggregate evidence lag; it must never
+        // interrupt or reset the local timer.
+      } finally {
+        checkpointInFlightRef.current = false
+      }
+    },
+    {
+      enabled: sessionQuery.data?.status === "running",
+      runImmediately: true,
+    },
+  )
 
   useEffect(() => {
     if (!sessionQuery.data?.user_id) return
@@ -234,13 +287,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     return (
       <Card className="mx-auto max-w-xl">
         <CardHeader>
-          <CardTitle>学习会话没有加载出来</CardTitle>
+          <CardTitle>本次学习没有加载出来</CardTitle>
           <CardDescription>{message}</CardDescription>
         </CardHeader>
         <CardContent className="flex gap-2">
           <Button asChild variant="outline">
             <Link href="/app">
-              <ArrowLeft /> 返回任务
+              <ArrowLeft /> 返回学习计划
             </Link>
           </Button>
           <Button onClick={() => void sessionQuery.refetch()}>
@@ -265,7 +318,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <CardContent>
           <Button asChild>
             <Link href="/app">
-              <ArrowLeft /> 返回任务台
+              <ArrowLeft /> 返回学习计划
             </Link>
           </Button>
         </CardContent>
@@ -284,6 +337,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     const accumulated = elapsedSeconds(current, now)
     dispatch({ type: "pause", nowMs: now })
     try {
+      await flushCoverage()
       let saved = await sessionMutations.pause.mutateAsync({
         sessionId,
         expectedStateVersion: stateVersionRef.current,
@@ -358,7 +412,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   const finish = async (openReview: boolean) => {
     if (!areTaskStepsComplete(task.steps)) {
-      toast.info("完成全部任务步骤后，才可以结束并复盘")
+      toast.info("请先完成全部执行步骤，再对照完成标准确认完成计划")
       return
     }
     const current = timerRef.current
@@ -369,13 +423,15 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     const accumulated = elapsedSeconds(current, now)
     dispatch({ type: "finish", nowMs: now })
     try {
+      await flushCoverage()
       await taskMutations.complete.mutateAsync({
         taskId: task.id,
         accumulatedSeconds: accumulated,
       })
+      confirmedTerminalRef.current = true
       setFinishDialogOpen(false)
       if (!openReview)
-        toast.success("任务已完成", {
+        toast.success("学习计划已完成", {
           description: "已保存本次计时，你可以稍后再复盘。",
         })
       router.push(openReview ? `/app/review/${sessionId}` : "/app")
@@ -389,20 +445,19 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   const cancelCurrentSession = async (openReview: boolean) => {
     const current = timerRef.current
-    if (!current || current.mode !== "paused") {
-      toast.info("请先暂停，再结束本次学习")
-      return
-    }
+    if (!current) return
     setCancelling(true)
     terminalNavigationRef.current = true
     const now = Date.now()
     const accumulated = elapsedSeconds(current, now)
     dispatch({ type: "finish", nowMs: now })
     try {
+      await flushCoverage()
       await sessionMutations.cancel.mutateAsync({
         sessionId,
         accumulatedSeconds: accumulated,
       })
+      confirmedTerminalRef.current = true
       setCancelDialogOpen(false)
       router.push(openReview ? `/app/review/${sessionId}` : "/app")
     } catch (error) {
@@ -434,7 +489,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         startedAt: new Date(now).toISOString(),
         endedAt: new Date(now + 1_000).toISOString(),
       })
-      toast.success("已添加一条手动标记")
+      toast.success("已记录一次偏离，仅用于你的共现统计")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "标记失败")
     }
@@ -462,13 +517,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
               sessionMutations.resume.isPending
             }
           >
-            <ArrowLeft /> 返回任务台
+            <ArrowLeft /> 返回学习计划
           </Button>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">学习会话</Badge>
+            <Badge variant="outline">本次学习</Badge>
             {session.observation_profile === "off_device_v1" ? (
               <Badge className="border border-indigo-100 bg-indigo-50 text-indigo-700">
-                <CameraOff /> 离设备任务 · 无摄像头
+                <CameraOff /> 离设备学习计划 · 无摄像头
               </Badge>
             ) : null}
             {session.experiment_mode ? (
@@ -481,16 +536,19 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             {task.title}
           </h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void addManualEvent()}>
-            <Plus /> 手动标记
-          </Button>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex flex-col gap-1 sm:items-end">
+            <Button variant="outline" onClick={() => void addManualEvent()}>
+              <Plus /> 标记刚才偏离了学习计划
+            </Button>
+            <p className="text-xs text-slate-500">仅用于你的个人共现统计</p>
+          </div>
           {allStepsCompleted ? (
             <Button
               onClick={() => setFinishDialogOpen(true)}
               disabled={finishing}
             >
-              <Flag /> 确认完成
+              <Flag /> 确认完成计划
             </Button>
           ) : timer.mode === "running" ? (
             <Button
@@ -513,16 +571,14 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                   sessionMutations.resume.isPending
                 }
               >
-                <ArrowLeft /> 返回任务台
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setCancelDialogOpen(true)}
-              >
-                <Square /> 结束本次学习
+                <ArrowLeft /> 返回学习计划
               </Button>
             </>
           )}
+          <Button variant="secondary" onClick={() => setCancelDialogOpen(true)}>
+            <Square />
+            结束本次学习
+          </Button>
         </div>
       </div>
 
@@ -539,8 +595,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                   {timer.mode === "running" ? "计时中" : "已暂停"}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <Clock3 className="size-4" /> 预计 {task.estimated_minutes}{" "}
-                  分钟
+                  <Clock3 className="size-4" /> 本次目标{" "}
+                  {session.target_minutes ?? 25} 分钟
                 </span>
               </div>
               <div className="py-12 text-center sm:py-16">
@@ -589,7 +645,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>当前任务步骤</CardTitle>
+                  <CardTitle>当前执行步骤</CardTitle>
                   <CardDescription className="mt-1">
                     只关注眼前这一小步。
                   </CardDescription>
@@ -598,7 +654,11 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                   {completedSteps}/{task.steps.length}
                 </span>
               </div>
-              <Progress value={stepProgress} className="mt-3" />
+              <Progress
+                value={stepProgress}
+                className="mt-3"
+                aria-label="当前执行步骤完成进度"
+              />
             </CardHeader>
             <CardContent className="space-y-2">
               {task.steps.map((step: TaskStep) => (
@@ -631,8 +691,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                 }`}
               >
                 {allStepsCompleted
-                  ? "全部步骤已完成，现在可以结束学习并进入复盘。"
-                  : `还剩 ${task.steps.length - completedSteps} 个步骤。当前先暂停，下次会从这里继续。`}
+                  ? "全部步骤已勾选。请对照完成标准确认完成计划；也可以先结束本次学习，稍后确认。"
+                  : `还剩 ${task.steps.length - completedSteps} 个步骤。可以暂停保留本次学习，也可以结束本次学习、下次新开一段。`}
               </p>
             </CardContent>
           </Card>
@@ -640,32 +700,62 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
         <div className="space-y-6">
           <VisionPanel
+            key={sessionId}
+            userId={session.user_id}
             sessionId={sessionId}
             paused={timer.mode !== "running"}
             experimentMode={session.experiment_mode}
             observationProfile={session.observation_profile}
+            observationAgreement={
+              (
+                session as typeof session & {
+                  observation_agreement?: import("@/lib/vision/agreement").ObservationAgreement
+                }
+              ).observation_agreement
+            }
             settings={settingsQuery.data}
-            onCameraStateChange={(enabled) => {
+            onValidCoverage={({ deltaMs }) => {
+              if (coverageBuffer.add(deltaMs) >= 5000) void flushCoverage()
+            }}
+            onObservationHeartbeat={async () => {
+              await sessionMutations.observationHeartbeat.mutateAsync({
+                sessionId,
+                expectedStateVersion: stateVersionRef.current,
+                cameraVersion: cameraVersionRef.current,
+              })
+            }}
+            onCameraStateChange={async (enabled) => {
+              if (confirmedTerminalRef.current) {
+                if (enabled) throw new Error("本次学习已经结束，无法开启观察")
+                // Terminal RPCs already seal camera/observation intervals.
+                // Do not retry an active-session off write after that fact.
+                return
+              }
+              if (!enabled) await flushCoverage()
               const cameraVersion = cameraVersionRef.current + 1
               cameraVersionRef.current = cameraVersion
-              void sessionMutations.camera
-                .mutateAsync({
-                  sessionId,
-                  expectedStateVersion: stateVersionRef.current,
-                  cameraVersion,
-                  enabled,
-                })
-                .then((saved) => {
-                  stateVersionRef.current = Math.max(
-                    stateVersionRef.current,
-                    saved.state_version,
-                  )
-                  cameraVersionRef.current = Math.max(
-                    cameraVersionRef.current,
-                    saved.camera_version,
-                  )
-                })
-                .catch(() => undefined)
+              const saved = await sessionMutations.camera.mutateAsync({
+                sessionId,
+                expectedStateVersion: stateVersionRef.current,
+                cameraVersion,
+                enabled,
+              })
+              stateVersionRef.current = Math.max(
+                stateVersionRef.current,
+                saved.state_version,
+              )
+              cameraVersionRef.current = Math.max(
+                cameraVersionRef.current,
+                saved.camera_version,
+              )
+              if (saved.camera_enabled !== enabled) {
+                throw new Error(
+                  enabled
+                    ? "当前学习状态已变化，本地观察未开启"
+                    : "观察区间暂未收口",
+                )
+              }
+              if (enabled) coverageBuffer.reset()
             }}
           />
 
@@ -738,11 +828,16 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>确认完成这个任务？</DialogTitle>
+            <DialogTitle>确认完成这个学习计划？</DialogTitle>
             <DialogDescription>
-              所有步骤均已完成。确认后会保存本次计时并将任务移入“已完成”；复盘可以现在做，也可以稍后再做。
+              所有步骤均已完成。确认后会保存本次计时并将学习计划移入“已完成”；复盘可以现在做，也可以稍后再做。
             </DialogDescription>
           </DialogHeader>
+          <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950">
+            <strong>完成标准：</strong>
+            {task.completion_criterion ||
+              "由你确认已达到本计划的学习目的；系统不自动判断是否学会。"}
+          </p>
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
             <div className="flex items-center justify-between gap-4 text-sm">
               <span className="font-medium text-indigo-950">步骤进度</span>
@@ -750,9 +845,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                 {completedSteps}/{task.steps.length}
               </span>
             </div>
-            <Progress value={stepProgress} className="mt-3" />
+            <Progress
+              value={stepProgress}
+              className="mt-3"
+              aria-label="完成确认中的执行步骤进度"
+            />
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              全部步骤已完成，结束后任务会进入“已完成”，不能再次直接开始。
+              全部步骤已完成，结束后学习计划会进入“已完成”，不能再次直接开始。
             </p>
           </div>
           <DialogFooter className="gap-2 sm:flex-col">
@@ -797,14 +896,17 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           <DialogHeader>
             <DialogTitle>结束这一段学习？</DialogTitle>
             <DialogDescription>
-              这只结束当前 session，不会把“{task.title}
-              ”标记为完成。已勾选步骤会保留，下次开始会创建一段新的学习记录。
+              这只结束本次学习，不会把“{task.title}
+              ”标记为完成。
+              {allStepsCompleted
+                ? "步骤已完成，返回后请对照完成标准确认完成计划。"
+                : "已勾选步骤会保留，下次开始会创建一段新的学习记录。"}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm leading-6 text-slate-700">
             当前完成 {completedSteps}/{task.steps.length} 个步骤，已计时{" "}
             {formatDuration(timer.displaySeconds)}
-            。你可以现在做一次简短复盘，也可以直接返回任务台。
+            。你可以现在做一次简短复盘，也可以直接返回学习计划。
           </div>
           <DialogFooter className="gap-2 sm:flex-col">
             <Button
@@ -823,7 +925,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
               onClick={() => void cancelCurrentSession(false)}
               disabled={cancelling}
             >
-              <ArrowLeft /> 结束并返回任务台
+              <ArrowLeft /> 结束并返回学习计划
             </Button>
             <Button
               type="button"
@@ -842,9 +944,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <CardContent className="flex items-start gap-3 p-4 text-sm leading-6 text-emerald-950">
           <Check className="mt-0.5 size-4 shrink-0" />
           <p>
-            <strong>隐私状态：</strong>浏览器只向 Supabase
-            写入任务、计时和结构化事件。摄像头视频没有上传接口；关闭摄像头或离开页面会立即停止媒体轨道和
-            Worker。
+            <strong>隐私状态：</strong>
+            本地观察不上传画面。只有另行授权云端过程观察后，才向百炼发送低频压缩帧；应用不保存原始媒体。不申请麦克风。关闭摄像头、暂停或离开页面会停止采样与新上传。
           </p>
         </CardContent>
       </Card>

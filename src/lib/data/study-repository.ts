@@ -24,6 +24,9 @@ import { agreementForProfile } from "@/lib/vision/agreement"
 
 type DataError = { code?: string; message: string }
 
+export type ReminderResponse =
+  "dismissed" | "back_to_task" | "normal_activity" | "not_needed" | "later"
+
 function friendlyDataError(error: DataError) {
   if (
     error.message.includes("Task steps are complete") ||
@@ -439,6 +442,20 @@ export async function checkpointRunningSession(
   return mapSession(data)
 }
 
+export async function heartbeatObservationRun(
+  sessionId: string,
+  expectedStateVersion: number,
+  cameraVersion: number,
+): Promise<string | null> {
+  const { data, error } = await getSupabase().rpc("heartbeat_observation_run", {
+    p_session_id: sessionId,
+    p_expected_state_version: expectedStateVersion,
+    p_camera_version: cameraVersion,
+  })
+  if (error) fail("确认本地观察状态失败", error)
+  return data
+}
+
 export async function pauseRunningSessionForNavigation(
   userId: string,
   sessionId: string,
@@ -525,12 +542,32 @@ export async function createReminderEvent(
   sessionId: string,
   behaviorEventId: string | null,
 ) {
-  const { error } = await getSupabase().from("reminder_events").insert({
-    user_id: userId,
-    session_id: sessionId,
-    behavior_event_id: behaviorEventId,
-  })
+  const { data, error } = await getSupabase()
+    .from("reminder_events")
+    .insert({
+      user_id: userId,
+      session_id: sessionId,
+      behavior_event_id: behaviorEventId,
+    })
+    .select("id")
+    .single()
   if (error) fail("记录提醒失败", error)
+  return data
+}
+
+export async function respondToReminder(
+  userId: string,
+  reminderId: string,
+  response: ReminderResponse,
+) {
+  const { data, error } = await getSupabase().rpc("respond_to_reminder", {
+    p_reminder_id: reminderId,
+    p_response: response,
+  })
+  if (error) fail("保存提醒反馈失败", error)
+  if (!data || data.id !== reminderId || data.user_id !== userId)
+    throw new Error("保存提醒反馈失败：返回数据异常")
+  return data
 }
 
 export async function getReview(

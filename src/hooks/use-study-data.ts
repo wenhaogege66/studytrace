@@ -25,6 +25,7 @@ import {
   getSession,
   getSettings,
   getTask,
+  heartbeatObservationRun,
   listBehaviorEvents,
   listTaskSessions,
   listTasks,
@@ -33,6 +34,7 @@ import {
   pauseSession,
   resumeSession,
   reopenCompletedTask,
+  respondToReminder,
   saveReview,
   setSessionCameraEnabled,
   setTaskStepCompleted,
@@ -41,6 +43,7 @@ import {
   updateBehaviorEvent,
   updateSettings,
   updateTask,
+  type ReminderResponse,
 } from "@/lib/data/study-repository"
 import type {
   BehaviorEventType,
@@ -395,6 +398,19 @@ export function useSessionMutations() {
           accumulatedSeconds,
           checkpointedAt,
         ),
+      onSuccess: (session) => cacheSession(queryClient, userId, session),
+    }),
+    observationHeartbeat: useMutation({
+      mutationFn: ({
+        sessionId,
+        expectedStateVersion,
+        cameraVersion,
+      }: {
+        sessionId: string
+        expectedStateVersion: number
+        cameraVersion: number
+      }) =>
+        heartbeatObservationRun(sessionId, expectedStateVersion, cameraVersion),
     }),
     finish: useMutation({
       onMutate: ({ sessionId }) =>
@@ -463,6 +479,7 @@ export function useEventMutations(sessionId: string) {
     })
 
   return {
+    refresh,
     create: useMutation({
       mutationFn: (input: {
         type: BehaviorEventType
@@ -490,6 +507,15 @@ export function useEventMutations(sessionId: string) {
     reminder: useMutation({
       mutationFn: (eventId: string | null) =>
         createReminderEvent(userId, sessionId, eventId),
+    }),
+    respondReminder: useMutation({
+      mutationFn: ({
+        reminderId,
+        response,
+      }: {
+        reminderId: string
+        response: ReminderResponse
+      }) => respondToReminder(userId, reminderId, response),
     }),
   }
 }

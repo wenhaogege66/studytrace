@@ -10,6 +10,11 @@ describe("facial transformation matrix conversion", () => {
   })
 
   it("fails safely for malformed matrix data", () => {
-    expect(matrixToPose([1, 2, 3])).toEqual({ yaw: 0, pitch: 0 })
+    expect(matrixToPose([1, 2, 3])).toEqual({ yaw: null, pitch: null })
+    expect(matrixToPose(Array(16).fill(0))).toEqual({ yaw: null, pitch: null })
+    expect(matrixToPose(Array(16).fill(NaN))).toEqual({
+      yaw: null,
+      pitch: null,
+    })
   })
 })

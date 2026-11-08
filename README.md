@@ -1,10 +1,10 @@
 # 学迹 StudyTrace
 
-学迹是一款隐私优先的学习辅助 Web 产品，把「任务拆分 → 稳定计时 → 可选的本地视觉观察 → 单次复盘」连成一个真实可操作的闭环。
+学迹是一款隐私优先的自律执行 Web 产品，把「任务设计 → AI 拆解 → 多次执行 → 可选过程观察与提醒 → 单次复盘 → 长期规律 → 个性化建议」连成一个真实可操作的闭环。
 
 [在线体验](https://studytrace.vercel.app) · [产品首页](https://studytrace.vercel.app) · [公开仓库](https://github.com/wenhaogege66/studytrace)
 
-> 默认仍可直接使用完整的临时体验；需要跨设备恢复时，可用六位邮箱验证码原地升级身份。不设密码，摄像头画面仍不上传。
+> 默认仍可直接使用完整的临时体验。本地过程观察默认不上传画面，可选云端过程观察必须另行授权，应用不保存原始媒体。
 
 ## 为什么做学迹
 
@@ -12,15 +12,16 @@
 
 学迹不把视觉识别当作评价工具。它只把「未在画面」「头部方向明显变化」等最小结构化事件交给用户确认、改写或删除，不计算专注分，也不输出走神、ADHD、能力或医学判断。
 
-## v0.1 能力
+## 当前能力（v0.2）
 
 - 任务：创建、拆分步骤、优先级、预计时长、编辑和删除；可由千问生成三步可编辑初稿。
 - 会话：开始、暂停、恢复、刷新恢复计时、完成步骤和手动标记；一个大任务可由多段 session 推进，每段都可结束后复盘或跳过复盘。
-- 本地视觉：任务可选“屏幕学习 / 纸笔学习 / 离开设备”观察方式；MediaPipe Face Landmarker 在 Web Worker 中按需运行，摄像头画面、帧、关键点与人脸特征不上传、不保存。
+- 过程观察：任务可选“屏幕学习 / 纸笔学习 / 离开设备”观察方式；MediaPipe Face Landmarker 与物体检测在 Web Worker 中按需运行。不启用云端时，画面与关键点仅在浏览器本地处理；云端使用需单独授权，且只检查已经约定的可见设备使用线索。
 - 事件：滚动窗口去抖、低打扰提醒、来源标记、确认、修正与硬删除。
 - 复盘：预计/实际时长、事件时间线、完成情况、自我感受和下次调整。
 - 隐私：匿名会话、逐行权限隔离、全部数据清除、30 天匿名数据清理。
 - 同步：临时记录可绑定新邮箱，或在明确确认后与已有邮箱账号原子合并；退出前自动暂停运行会话。
+- 洞察：按 7 天或 30 天汇总投入片段、完成记录、复盘覆盖、观察覆盖和提醒反馈；样本不足时只显示收集进度。
 - 展示：技术实验模式可缩短阈值和注入明确标记的模拟事件。
 
 桌面 Chrome / Edge 是完整体验目标。手机端支持首页、任务管理和手动复盘；摄像头视觉能力按浏览器兼容性尽力支持。
@@ -35,12 +36,13 @@ Next.js 16 App Router
     ├── Qwen Flash ── 仅生成可编辑任务初稿与白名单观察建议
     ├── TanStack Query ── Supabase Data API
     ├── timer reducer/ref ── 刷新恢复
-    └── Camera ── 4 FPS frames ── MediaPipe Web Worker
-                                      │
-                                      └── 仅结构化事件 ── Supabase Postgres
+    ├── Camera ── 4 FPS frames ── MediaPipe Web Worker
+    │                                 │
+    │                                 └── 仅结构化事件 ── Supabase Postgres
+    └── deterministic insights ── 仅本人聚合指标
 ```
 
-Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key；`anon` 没有业务表权限，匿名身份建立后使用 `authenticated` 角色，并由 `auth.uid() = user_id` 隔离数据。
+Supabase 中的核心业务表与派生事实表均启用 RLS。浏览器只使用 publishable key；`anon` 没有业务表权限，匿名身份建立后使用 `authenticated` 角色，并由 `auth.uid() = user_id` 隔离数据。派生事实表不向浏览器开放原始查询，只通过 `get_my_insights(7|30)` 返回本人汇总。
 公开匿名体验还设置了数据库硬上限：每个匿名身份最多保留 200 个任务、1,000 段会话、5,000 条观察事件、5,000 条提醒记录和 1,000 条复盘；超出后需先删除旧记录。任务步骤必须是 1～20 个结构化且 ID 唯一的条目。
 
 主要路由：
@@ -49,6 +51,7 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 - `/app`：任务工作台。
 - `/app/session/[id]`：学习计时与可选视觉观察。
 - `/app/review/[id]`：单次复盘与事件修正。
+- `/app/insights`：7 天 / 30 天事实型长期洞察与样本收集进度。
 - `/app/settings`：数据用途、视觉/提醒阈值和数据清除。
 - `/auth`：临时身份升级、邮箱验证码恢复、安全合并、退出与账号删除。
 
@@ -70,6 +73,8 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 
 数据库没有用于保存视频、图片、音频、人脸关键点、生物特征或原始帧的列。MediaPipe 模型与 WASM 放在 `public/mediapipe`，只在用户主动开启摄像头后加载。
 
+可选云端过程观察默认关闭。主动同意后，每二十秒最多发送一组四张压缩图像给阿里云百炼，覆盖最近约六秒；不持续上传完整视频，也不申请麦克风。关闭、暂停、后台、导航离开、身份变化或撤回授权后停止新采样和上传，迟到响应不产生提醒。本应用不保存图像或提供商原文；百炼[隐私说明](https://help.aliyun.com/zh/model-studio/privacy-notice)披露其会依法存储调用产生的数据，不能承诺第三方零留存。最小化额度/防滥用计数最多保留七天，不含学习内容或媒体，删除业务数据不返还额度。
+
 ## 数据模型与安全
 
 - `tasks`：任务、步骤 JSON、优先级、预计时长、状态和用户确认的观察方式。
@@ -77,9 +82,17 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 - `behavior_events`：类型、方向、来源、起止时间和用户修正。
 - `reminder_events`：提醒展示与响应。
 - `reviews`：完成状态、自评、未完成原因和下次调整。
-- `user_settings`：授权版本、开关、阈值和隐私设置。
+- `user_settings`：授权版本、开关、阈值、IANA 时区和洞察设置。
+- `session_segments`：每次开始、恢复、暂停和结束形成的连续投入段。
+- `observation_runs`：摄像头启停区间、最后一次服务端观察心跳、观察策略、阈值和检测器版本；不含画面或关键点。
+- `task_lifecycle_events`、`task_step_events`：任务和步骤的完成、重开、归档等事实历史；步骤改名前后的标题都会保留。
+- 私有 `user_activity`、`account_merge_tokens`、`account_delete_tokens`、`insight_fact_coverage`：匿名活跃期清理、一次性账号操作凭证与事实历史完整性状态。
 
-迁移位于 `supabase/migrations`。数据库验收脚本位于 `supabase/tests/database.test.sql`，覆盖：
+洞察关闭后会立即封口当前投入段和观察区间，关闭期间不产生新的派生事实；重新开启只从当下继续，不回填关闭区间。修改统计时区会按新时区重新解释全部既有记录，而不是冻结历史日历标签。用户级投入和观察时长先做时间区间并集，避免账号合并后的重叠记录重复计时；跨时段会话的复盘和完成结果只归到实际投入最长的时段（并列时按页面时段顺序），复盘覆盖率则按会话结束时间归属当前窗口。
+
+运行中的学习计时与本地观察每 60 秒向服务端发送一次不含画面内容的存活确认。连续超过 120 秒没有服务端确认会被视为一次中断：旧区间只记录到最后确认点，重新打开页面时从当前时刻建立新区间，离线空档不会回填到计时或长期规律中。
+
+迁移位于 `supabase/migrations`。数据库验收脚本位于 `supabase/tests/database.test.sql`、`supabase/tests/account_sync.test.sql` 与 `supabase/tests/insights.test.sql`，覆盖：
 
 - 双匿名用户 RLS 隔离与越权读取失败。
 - `user_id` 所有权不可篡改。
@@ -91,6 +104,8 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 - 活动 session 存在时锁定任务观察方式，结束后下一段 session 才读取新策略快照。
 - 任务关联记录级联删除。
 - `delete_my_data()` 只清除调用者自己的全部业务记录。
+- 合并凭证短时、哈希、一次性保存，并要求新的邮箱 OTP 会话；永久删除账号同样要求独立重新验证。
+- 洞察排除实验/模拟数据、少于 2 分钟的碎片和未确认视觉事件；跨午夜片段按用户时区拆分。
 - `anon` 无业务表权限，`authenticated` 仅拥有必要 CRUD/RPC 权限。
 
 ## 本地运行
@@ -119,7 +134,7 @@ QWEN_BASE_URL=https://your-workspace.cn-beijing.maas.aliyuncs.com/compatible-mod
 QWEN_MODEL=qwen3.7-flash-2026-07-15
 ```
 
-AI 路由会先校验当前 Supabase 匿名会话，服务端重新验证三个步骤和观察模式；千问不会收到摄像头画面、视觉关键点或人脸特征。
+任务规划 AI 路由会先校验当前 Supabase 身份，服务端重新验证三个步骤和观察模式；此规划路由不接收摄像头画面、视觉关键点或人脸特征。可选云端过程观察使用独立的授权、接口和额度限制；启用前须轮换已暴露的 Key，并确认免费额度用完即停，再设置 `QWEN_VISION_ENABLED=true`。
 服务端同时限制每个匿名身份 10 分钟 8 次、全站每日 200 次（UTC），入口仍由 Turnstile 抑制批量匿名身份。百炼新人免费额度并非永久免费，生产环境还应在控制台开启“免费额度用完即停”。
 
 不要把 legacy secret、service role key、数据库密码或 Turnstile secret 写入 `NEXT_PUBLIC_*` 变量。
@@ -152,7 +167,7 @@ pnpm test:e2e
 
 Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正、移动端账号操作，以及 Turnstile 脚本被阻断时的显式失败与不可绕过状态；不会写入生产数据库。
 
-数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。当前两份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
+数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。三份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
 
 ```bash
 npx supabase start
@@ -166,11 +181,15 @@ psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
   -v ON_ERROR_STOP=1 \
   -f supabase/tests/account_sync.test.sql
 
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+  -v ON_ERROR_STOP=1 \
+  -f supabase/tests/insights.test.sql
+
 # 保持本地 Supabase 与 Mailpit 运行，验证真实 Auth/OTP/合并链路
 pnpm exec playwright test --config=playwright.local-auth.config.ts
 ```
 
-如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。PR4 合入后会新增第三份洞察 SQL 验收脚本，并排在以上两份之后执行。
+如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。
 
 本地 Supabase 使用公开的开发凭据，部分 Docker 环境会把端口暴露到局域网；仅在可信网络且本机防火墙开启时运行，验收结束后执行 `npx supabase stop`。
 

@@ -1,5 +1,11 @@
 export function matrixToPose(data: number[]) {
-  if (data.length < 16) return { yaw: 0, pitch: 0 }
+  if (data.length < 16 || data.some((value) => !Number.isFinite(value)))
+    return { yaw: null, pitch: null }
+  if (
+    Math.hypot(data[4], data[5]) < 0.01 ||
+    Math.hypot(data[2], data[10]) < 0.01
+  )
+    return { yaw: null, pitch: null }
 
   // MediaPipe returns a flattened 4×4 facial transformation matrix. The
   // rotation terms are converted to Euler angles for relative, calibrated

@@ -6,6 +6,7 @@ export async function createManualPlan(
   steps: string[],
   minutes = 25,
   profile = "study_screen_v1",
+  phonePolicy?: "allowed" | "restricted" | "ignored",
 ) {
   await page
     .getByRole("button", { name: "制定计划", exact: true })
@@ -35,6 +36,8 @@ export async function createManualPlan(
   await page.getByLabel("整个计划预计（分钟）").fill(String(minutes))
   await page.getByRole("button", { name: "确认方案" }).click()
   await page.getByLabel("学习方式", { exact: true }).selectOption(profile)
+  if (phonePolicy)
+    await page.getByLabel("手机", { exact: true }).selectOption(phonePolicy)
   await page.getByRole("button", { name: "保存学习计划" }).click()
   await expect(page).toHaveURL(/\/app$/)
   await expect(

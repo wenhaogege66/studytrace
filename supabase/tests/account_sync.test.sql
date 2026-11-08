@@ -1326,8 +1326,9 @@ select public.prepare_account_merge(
 reset role;
 update private.account_merge_tokens
 set
-  created_at = clock_timestamp() - interval '11 minutes',
-  expires_at = clock_timestamp() - interval '1 minute'
+  created_at = expiry_anchor.now_at - interval '11 minutes',
+  expires_at = expiry_anchor.now_at - interval '1 minute'
+from (select clock_timestamp() as now_at) as expiry_anchor
 where source_user_id = '99999999-9999-4999-8999-999999999999';
 
 set local role authenticated;
