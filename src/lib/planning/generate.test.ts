@@ -111,7 +111,7 @@ describe("planning provider boundaries", () => {
     expect(mocks.model).toHaveBeenCalledWith("configured-free-model")
     expect(mocks.generateText).toHaveBeenCalledTimes(1)
   })
-  it("uses the compatible provider-facing schema for prepare and review", async () => {
+  it("keeps full validation schemas while configuring JSON Object provider mode", async () => {
     const plan = manualLearningPlan(input.intent)
     mocks.generateText.mockResolvedValueOnce({
       output: { response: { kind: "plan", plan } },
@@ -122,9 +122,13 @@ describe("planning provider boundaries", () => {
     expect(prepareFormat.type).toBe("json")
     expect(prepareFormat.schema.type).toBe("object")
     expect(prepareFormat.schema.properties.response.oneOf).toHaveLength(2)
-    expect(JSON.stringify(prepareFormat.schema)).not.toContain("propertyNames")
-    expect(JSON.stringify(prepareFormat.schema)).not.toContain(
-      "additionalItems",
+    expect(mocks.createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ supportsStructuredOutputs: false }),
+    )
+    expect(JSON.stringify(prepareFormat.schema)).toContain("propertyNames")
+    expect(JSON.stringify(prepareFormat.schema)).toContain("additionalItems")
+    expect(mocks.generateText.mock.calls[0][0].system).toContain(
+      JSON.stringify(prepareFormat.schema),
     )
     mocks.generateText.mockResolvedValueOnce({
       output: { comment: "保留当前方案", reason: "", suggestion: null },
@@ -133,8 +137,11 @@ describe("planning provider boundaries", () => {
     const reviewFormat =
       await mocks.generateText.mock.calls[1][0].output.responseFormat
     expect(reviewFormat.type).toBe("json")
-    expect(JSON.stringify(reviewFormat.schema)).not.toContain("propertyNames")
-    expect(JSON.stringify(reviewFormat.schema)).not.toContain("additionalItems")
+    expect(JSON.stringify(reviewFormat.schema)).toContain("propertyNames")
+    expect(JSON.stringify(reviewFormat.schema)).toContain("additionalItems")
+    expect(mocks.generateText.mock.calls[1][0].system).toContain(
+      JSON.stringify(reviewFormat.schema),
+    )
   })
   it("does not accept review suggestions that rewrite already completed steps", async () => {
     const initial = manualLearningPlan(input.intent)
