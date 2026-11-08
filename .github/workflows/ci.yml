@@ -89,13 +89,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The insights suite reconnects to the local-only administrative role
+          # through the published 54322 port. Run the client on the runner, not
+          # inside Postgres where localhost:54322 does not exist.
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
           sql_suites=(supabase/tests/*.sql)
           test "${#sql_suites[@]}" -ge 9
           for sql_suite in "${sql_suites[@]}"; do
             printf '::group::%s\n' "$sql_suite"
-            docker exec -i "supabase_db_$STUDYTRACE_CI_PROJECT_ID" \
-              psql --no-psqlrc --username postgres --dbname postgres \
-              --set ON_ERROR_STOP=1 --file - < "$sql_suite"
+            psql --no-psqlrc \
+              --dbname postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+              --set ON_ERROR_STOP=1 --file "$sql_suite"
             printf '::endgroup::\n'
           done
 
