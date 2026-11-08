@@ -53,7 +53,34 @@ export function aiFailureMetadata(error: unknown) {
                       : status === 400
                         ? "invalid_parameter"
                         : "unknown"
-  return { category, status }
+  // Only fixed vocabulary may leave the error boundary. In particular, do not
+  // log a provider message: it may echo a prompt, schema values or credentials.
+  const schemaSignals =
+    category === "structured_output" && status === 400
+      ? [
+          ["root", /\broot\b/i],
+          ["object", /\bobject\b/i],
+          ["array", /\barray\b/i],
+          ["oneOf", /\boneOf\b/],
+          ["anyOf", /\banyOf\b/],
+          ["items", /\bitems\b/],
+          ["prefixItems", /\bprefixItems\b/],
+          ["additionalItems", /\badditionalItems\b/],
+          ["propertyNames", /\bpropertyNames\b/],
+          ["additionalProperties", /\badditionalProperties\b/],
+          ["required", /\brequired\b/i],
+          ["strict", /\bstrict\b/i],
+          ["max_tokens", /\bmax_tokens\b/],
+          ["unsupported", /unsupported|not supported|not allowed/i],
+        ]
+          .filter(([, pattern]) => (pattern as RegExp).test(hint))
+          .map(([name]) => name as string)
+      : []
+  return {
+    category,
+    status,
+    ...(schemaSignals.length ? { schemaSignals } : {}),
+  }
 }
 
 export function logAiFailure(operation: AiOperation, error: unknown) {

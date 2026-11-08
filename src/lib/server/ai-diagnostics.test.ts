@@ -56,4 +56,18 @@ describe("privacy-safe AI diagnostics", () => {
       status: null,
     })
   })
+
+  it("reports only allowlisted schema signals, never provider text or values", () => {
+    const metadata = aiFailureMetadata({
+      statusCode: 400,
+      responseBody:
+        "Invalid response_format: root schema type must be object; oneOf unsupported. PRIVATE_PROMPT_OR_KEY",
+    })
+    expect(metadata).toEqual({
+      category: "structured_output",
+      status: 400,
+      schemaSignals: ["root", "object", "oneOf", "unsupported"],
+    })
+    expect(JSON.stringify(metadata)).not.toContain("PRIVATE_PROMPT_OR_KEY")
+  })
 })
