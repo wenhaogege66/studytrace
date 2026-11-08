@@ -41,30 +41,81 @@ describe("Qwen structured-output schema compatibility", () => {
     })
   })
 
-  it("preserves a business field named propertyNames and literal metadata", async () => {
+  it("preserves same-named business fields and literal metadata", async () => {
     const schema = z
       .object({
         propertyNames: z.string().min(1).max(20),
+        additionalItems: z.boolean(),
         payload: z
-          .object({ propertyNames: z.string() })
-          .default({ propertyNames: "literal default" }),
+          .object({ propertyNames: z.string(), additionalItems: z.boolean() })
+          .default({
+            propertyNames: "literal default",
+            additionalItems: false,
+          }),
         context: z.record(z.string().max(4), z.string()),
       })
       .meta({
-        examples: [{ propertyNames: { propertyNames: "literal example" } }],
+        examples: [
+          {
+            propertyNames: { propertyNames: "literal example" },
+            additionalItems: false,
+          },
+        ],
       })
     const adapted = await qwenStructuredSchema(schema).jsonSchema
     expect(adapted).toMatchObject({
       properties: {
         propertyNames: { type: "string", minLength: 1, maxLength: 20 },
+        additionalItems: { type: "boolean" },
         payload: {
-          default: { propertyNames: "literal default" },
-          properties: { propertyNames: { type: "string" } },
+          default: { propertyNames: "literal default", additionalItems: false },
+          properties: {
+            propertyNames: { type: "string" },
+            additionalItems: { type: "boolean" },
+          },
         },
       },
-      examples: [{ propertyNames: { propertyNames: "literal example" } }],
+      examples: [
+        {
+          propertyNames: { propertyNames: "literal example" },
+          additionalItems: false,
+        },
+      ],
     })
     expect(adapted.properties?.context).not.toHaveProperty("propertyNames")
+  })
+
+  it("removes the unsupported tuple keyword while retaining its exact items and length constraints", async () => {
+    const schema = learningPlanSchema.shape.completionCriteria
+    const original = await asSchema(schema).jsonSchema
+    expect(original).toMatchObject({
+      type: "array",
+      items: expect.any(Array),
+      additionalItems: false,
+      minItems: 3,
+      maxItems: 3,
+    })
+    const adapted = qwenStructuredSchema(schema)
+    const wire = await adapted.jsonSchema
+    expect(wire).toEqual(
+      Object.fromEntries(
+        Object.entries(original).filter(([key]) => key !== "additionalItems"),
+      ),
+    )
+    expect(wire.items).toHaveLength(3)
+    expect(original).toHaveProperty("additionalItems", false)
+    await expect(
+      adapted.validate!(["完成步骤", "能解释", "做一次自测"]),
+    ).resolves.toMatchObject({ success: true })
+    await expect(
+      adapted.validate!(["完成步骤", "能解释"]),
+    ).resolves.toMatchObject({ success: false })
+    await expect(
+      adapted.validate!(["完成步骤", "能解释", "做一次自测", "多出一项"]),
+    ).resolves.toMatchObject({ success: false })
+    await expect(
+      adapted.validate!(["完成步骤", "能解释", 3]),
+    ).resolves.toMatchObject({ success: false })
   })
 
   it("keeps key-length and value-length validation after adapting the provider schema", async () => {

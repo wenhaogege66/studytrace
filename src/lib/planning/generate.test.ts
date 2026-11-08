@@ -119,6 +119,9 @@ describe("planning provider boundaries", () => {
       await mocks.generateText.mock.calls[0][0].output.responseFormat
     expect(prepareFormat.type).toBe("json")
     expect(JSON.stringify(prepareFormat.schema)).not.toContain("propertyNames")
+    expect(JSON.stringify(prepareFormat.schema)).not.toContain(
+      "additionalItems",
+    )
     mocks.generateText.mockResolvedValueOnce({
       output: { comment: "保留当前方案", reason: "", suggestion: null },
     })
@@ -127,6 +130,7 @@ describe("planning provider boundaries", () => {
       await mocks.generateText.mock.calls[1][0].output.responseFormat
     expect(reviewFormat.type).toBe("json")
     expect(JSON.stringify(reviewFormat.schema)).not.toContain("propertyNames")
+    expect(JSON.stringify(reviewFormat.schema)).not.toContain("additionalItems")
   })
   it("does not accept review suggestions that rewrite already completed steps", async () => {
     const initial = manualLearningPlan(input.intent)
