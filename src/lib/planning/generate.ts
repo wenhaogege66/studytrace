@@ -1,9 +1,8 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { generateText, Output } from "ai"
+import { asSchema, generateText, Output } from "ai"
 import { z } from "zod"
 
 import { validateQwenBaseURL } from "@/lib/ai/task-plan"
-import { qwenStructuredSchema } from "@/lib/ai/qwen-schema"
 import {
   learningPlanSchema,
   planningQuestionSchema,
@@ -39,7 +38,7 @@ function configuredModel() {
     name: "qwen",
     apiKey,
     baseURL: validateQwenBaseURL(baseURL),
-    supportsStructuredOutputs: true,
+    supportsStructuredOutputs: false,
   })
   return provider.chatModel(
     process.env.QWEN_PLANNING_MODEL ??
@@ -115,14 +114,18 @@ export async function prepareLearningPlan(
   input: PreparePlanningInput,
   signal?: AbortSignal,
 ) {
+  const outputSchema = await asSchema(generatedResponseEnvelopeSchema)
+    .jsonSchema
   const { output } = await generateText({
     model: configuredModel(),
     output: Output.object({
-      schema: qwenStructuredSchema(generatedResponseEnvelopeSchema),
+      schema: generatedResponseEnvelopeSchema,
     }),
     system: [
       planningInstructions,
       "输出 JSON 的最外层只包含 response 字段；response 内放上述 kind=questions 或 kind=plan 的完整对象。",
+      "输出必须是符合以下完整 JSON Schema 的 JSON 对象，不添加说明或 Markdown：",
+      JSON.stringify(outputSchema),
     ].join("\n"),
     prompt: JSON.stringify(input),
     temperature: 0,
@@ -138,15 +141,18 @@ export async function reviewLearningPlan(
   input: { initial: LearningPlan; current: LearningPlan; reason?: string },
   signal?: AbortSignal,
 ) {
+  const outputSchema = await asSchema(planningReviewSchema).jsonSchema
   const { output } = await generateText({
     model: configuredModel(),
     output: Output.object({
-      schema: qwenStructuredSchema(planningReviewSchema),
+      schema: planningReviewSchema,
     }),
     system: [
       planningInstructions,
       "现在只做一次修改点评。比较 initial 和 current，点评可观察的变化、可行性与取舍，不猜测用户动机。尊重当前采用的目的与约定。",
       "没有必要修订时 suggestion=null；必要时给完整修订版并说明理由。不得删除或改写 completed=true 的步骤及 id；保留其完成状态。用户可保留自己的方案。",
+      "输出必须是符合以下完整 JSON Schema 的 JSON 对象，不添加说明或 Markdown：",
+      JSON.stringify(outputSchema),
     ].join("\n"),
     prompt: JSON.stringify(input),
     temperature: 0,
