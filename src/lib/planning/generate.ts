@@ -25,6 +25,9 @@ const generatedResponseSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("plan"), plan: generatedPlanSchema }),
 ])
+const generatedResponseEnvelopeSchema = z.object({
+  response: generatedResponseSchema,
+})
 
 function configuredModel() {
   if (process.env.QWEN_PLANNING_ENABLED !== "true")
@@ -115,9 +118,12 @@ export async function prepareLearningPlan(
   const { output } = await generateText({
     model: configuredModel(),
     output: Output.object({
-      schema: qwenStructuredSchema(generatedResponseSchema),
+      schema: qwenStructuredSchema(generatedResponseEnvelopeSchema),
     }),
-    system: planningInstructions,
+    system: [
+      planningInstructions,
+      "输出 JSON 的最外层只包含 response 字段；response 内放上述 kind=questions 或 kind=plan 的完整对象。",
+    ].join("\n"),
     prompt: JSON.stringify(input),
     temperature: 0,
     maxOutputTokens: 2300,
@@ -125,7 +131,7 @@ export async function prepareLearningPlan(
     abortSignal: signal,
     providerOptions: { qwen: { enable_thinking: false } },
   })
-  return normalizePreparedPlan(output, input)
+  return normalizePreparedPlan(output.response, input)
 }
 
 export async function reviewLearningPlan(
