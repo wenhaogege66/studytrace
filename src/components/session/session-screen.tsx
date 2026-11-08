@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { toast } from "sonner"
 
+import { LearningContextForm } from "@/components/planning/learning-context-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -527,6 +528,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
       <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-6">
+          <LearningContextForm key={session.id} session={session} />
           <Card className="session-grid overflow-hidden border-indigo-100 bg-white/92 shadow-lg shadow-indigo-950/5">
             <CardContent className="p-6 sm:p-8">
               <div className="flex items-center justify-between text-sm text-slate-500">

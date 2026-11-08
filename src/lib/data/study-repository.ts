@@ -4,7 +4,6 @@ import {
   mapReview,
   mapSession,
   mapTask,
-  stepsToJson,
   type BehaviorEvent,
   type BehaviorEventType,
   type CompletionStatus,
@@ -19,6 +18,9 @@ import {
 } from "@/lib/domain"
 import { getSupabase } from "@/lib/supabase/client"
 import type { TablesUpdate } from "@/types/database"
+import { manualLearningPlan } from "@/lib/planning/manual"
+import { planFromTask, saveLearningPlan } from "@/lib/planning/repository"
+import { agreementForProfile } from "@/lib/vision/agreement"
 
 type DataError = { code?: string; message: string }
 
@@ -99,20 +101,19 @@ export async function createTask(
   userId: string,
   draft: TaskDraft,
 ): Promise<Task> {
-  const { data, error } = await getSupabase()
-    .from("tasks")
-    .insert({
-      user_id: userId,
-      title: draft.title.trim(),
-      steps: stepsToJson(draft.steps),
-      priority: draft.priority,
-      estimated_minutes: draft.estimatedMinutes,
-      observation_profile: draft.observationProfile,
-    })
-    .select()
-    .single()
-  if (error) fail("创建任务失败", error)
-  return mapTask(data)
+  const plan = {
+    ...manualLearningPlan(draft.title, draft.estimatedMinutes),
+    steps: draft.steps,
+    priority: draft.priority,
+    observationProfile: draft.observationProfile,
+    observationAgreement: agreementForProfile(draft.observationProfile),
+  }
+  return saveLearningPlan({
+    userId,
+    requestId: crypto.randomUUID(),
+    plan,
+    revisions: [{ kind: "manual", snapshot: plan, changes: [] }],
+  })
 }
 
 export async function updateTask(
@@ -120,30 +121,49 @@ export async function updateTask(
   taskId: string,
   draft: TaskDraft,
 ): Promise<Task> {
-  const { data, error } = await getSupabase()
-    .from("tasks")
-    .update({
-      title: draft.title.trim(),
-      steps: stepsToJson(draft.steps),
-      priority: draft.priority,
-      estimated_minutes: draft.estimatedMinutes,
-      observation_profile: draft.observationProfile,
-    })
-    .eq("user_id", userId)
-    .eq("id", taskId)
-    .select()
-    .single()
-  if (error) fail("更新任务失败", error)
-  return mapTask(data)
+  const task = await getTask(userId, taskId)
+  if (!task) throw new Error("没有找到这个学习计划")
+  const initial = planFromTask(task)
+  const plan = {
+    ...initial,
+    title: draft.title.trim(),
+    steps: draft.steps,
+    priority: draft.priority,
+    estimatedMinutes: draft.estimatedMinutes,
+    observationProfile: draft.observationProfile,
+    observationAgreement:
+      draft.observationProfile === task.observation_profile
+        ? initial.observationAgreement
+        : agreementForProfile(draft.observationProfile),
+  }
+  return saveLearningPlan({
+    userId,
+    requestId: crypto.randomUUID(),
+    taskId,
+    expectedRevisionId: task.current_plan_revision_id,
+    plan,
+    revisions: [{ kind: "user_edit", snapshot: plan, changes: [] }],
+  })
 }
 
 export async function duplicateTask(userId: string, task: Task): Promise<Task> {
-  return createTask(userId, {
-    title: `${task.title}（副本）`,
+  const plan = {
+    ...planFromTask(task),
+    title: `${task.title.slice(0, 116)}（副本）`,
     steps: task.steps.map((step) => createStep(step.title)),
-    priority: task.priority,
-    estimatedMinutes: task.estimated_minutes,
-    observationProfile: task.observation_profile,
+  }
+  return saveLearningPlan({
+    userId,
+    requestId: crypto.randomUUID(),
+    plan,
+    revisions: [
+      {
+        kind: "manual",
+        snapshot: plan,
+        changes: [],
+        comment: "复制为新的学习计划，进度独立记录",
+      },
+    ],
   })
 }
 
