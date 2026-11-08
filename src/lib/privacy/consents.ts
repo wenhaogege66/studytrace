@@ -55,6 +55,7 @@ async function captureIdentity(expectedUserId?: string) {
       accessToken: async () => session.access_token,
       auth: {
         persistSession: false,
+        storageKey: `studytrace-consents-${crypto.randomUUID()}`,
         autoRefreshToken: false,
         detectSessionInUrl: false,
       },

@@ -11,6 +11,11 @@ test.beforeEach(async ({ page }, testInfo) => {
 })
 
 test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环", async ({ page }) => {
+  const cameraWrites: string[] = []
+  page.on("request", (request) => {
+    if (request.url().endsWith("/rest/v1/rpc/set_study_session_camera"))
+      cameraWrites.push(request.url())
+  })
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -93,6 +98,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
   await page.getByRole("button", { name: "已完成 1" }).click()
   await expect(page.getByText("完成一次科创问题定义")).toBeVisible()
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
+  expect(cameraWrites).toEqual([])
 })
 
 test("大任务暂停后恢复同一会话，并在完成全部步骤后结束", async ({ page }) => {
@@ -174,6 +180,14 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   await page.getByRole("button", { name: "开始学习" }).click()
   await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await page.getByRole("checkbox", { name: "完成唯一步骤" }).click()
+  await page.getByRole("button", { name: "结束本次学习", exact: true }).click()
+  await expect(
+    page.getByText("步骤已完成，返回后请对照完成标准确认完成计划。", {
+      exact: false,
+    }),
+  ).toBeVisible()
+  await expect(page.getByText(/下次开始会创建一段新的学习记录/)).toHaveCount(0)
+  await page.getByRole("button", { name: "继续保留暂停状态" }).click()
   await page.getByRole("button", { name: /^返回(?:任务台|学习计划)$/ }).click()
   await expect(page).toHaveURL(/\/app$/)
 

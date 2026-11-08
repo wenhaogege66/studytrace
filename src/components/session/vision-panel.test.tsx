@@ -146,7 +146,7 @@ describe("reliable observation lifecycle", () => {
       })
     expect(TestWorker.instances).toHaveLength(3)
     expect(stopTrack).toHaveBeenCalledOnce()
-    expect(camera).toHaveBeenLastCalledWith(false)
+    expect(camera).not.toHaveBeenCalled()
   })
   it("does not sample until the protected camera-state write has succeeded", async () => {
     const { camera } = mount()
@@ -284,7 +284,22 @@ describe("reliable observation lifecycle", () => {
       window.dispatchEvent(new Event("studytrace:identity-changing")),
     )
     expect(stopTrack).toHaveBeenCalledOnce()
-    expect(camera).toHaveBeenLastCalledWith(false)
+    expect(camera).not.toHaveBeenCalled()
+  })
+  it("does not send camera-off cleanup or retry when observation was never started", async () => {
+    const camera = vi.fn()
+    const view = render(
+      <VisionPanel
+        sessionId="session-1"
+        paused={false}
+        experimentMode={false}
+        observationProfile="study_screen_v1"
+        onCameraStateChange={camera}
+      />,
+    )
+    view.unmount()
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(camera).not.toHaveBeenCalled()
   })
   it("cancels pending getUserMedia without leaving a late stream alive", async () => {
     let finish!: (stream: MediaStream) => void

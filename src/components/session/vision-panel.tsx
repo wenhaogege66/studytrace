@@ -126,6 +126,7 @@ export function VisionPanel({
   const effectsQueueRef = useRef<Promise<void>>(Promise.resolve())
   const mountedRef = useRef(true)
   const stoppingRef = useRef(false)
+  const cameraStateMayBeOpenRef = useRef(false)
   const observationHeartbeatRef = useRef(onObservationHeartbeat)
 
   useEffect(() => {
@@ -214,13 +215,19 @@ export function VisionPanel({
 
   const syncCameraState = useCallback(
     async (enabled: boolean, canRetry: () => boolean = () => true) => {
+      // No server-side observation interval belongs to this panel until an
+      // enable write was attempted. An untouched panel needs no off cleanup.
+      if (!enabled && !cameraStateMayBeOpenRef.current) return true
       for (const delayMs of CAMERA_STATE_RETRY_DELAYS_MS) {
         if (!canRetry()) return false
         if (delayMs)
           await new Promise((resolve) => setTimeout(resolve, delayMs))
         if (!canRetry()) return false
         try {
+          if (enabled) cameraStateMayBeOpenRef.current = true
           await onCameraStateChange(enabled)
+          if (enabled && !canRetry()) return false
+          cameraStateMayBeOpenRef.current = enabled
           return true
         } catch {
           // A lost response can hide a successful write, so retry the same
