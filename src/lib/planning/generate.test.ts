@@ -5,9 +5,9 @@ const mocks = vi.hoisted(() => ({
   createProvider: vi.fn(),
   model: vi.fn(),
 }))
-vi.mock("ai", () => ({
+vi.mock("ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("ai")>()),
   generateText: mocks.generateText,
-  Output: { object: vi.fn() },
 }))
 vi.mock("@ai-sdk/openai-compatible", () => ({
   createOpenAICompatible: mocks.createProvider,
@@ -110,6 +110,23 @@ describe("planning provider boundaries", () => {
     )
     expect(mocks.model).toHaveBeenCalledWith("configured-free-model")
     expect(mocks.generateText).toHaveBeenCalledTimes(1)
+  })
+  it("uses the compatible provider-facing schema for prepare and review", async () => {
+    const plan = manualLearningPlan(input.intent)
+    mocks.generateText.mockResolvedValueOnce({ output: { kind: "plan", plan } })
+    await prepareLearningPlan(input)
+    const prepareFormat =
+      await mocks.generateText.mock.calls[0][0].output.responseFormat
+    expect(prepareFormat.type).toBe("json")
+    expect(JSON.stringify(prepareFormat.schema)).not.toContain("propertyNames")
+    mocks.generateText.mockResolvedValueOnce({
+      output: { comment: "保留当前方案", reason: "", suggestion: null },
+    })
+    await reviewLearningPlan({ initial: plan, current: plan })
+    const reviewFormat =
+      await mocks.generateText.mock.calls[1][0].output.responseFormat
+    expect(reviewFormat.type).toBe("json")
+    expect(JSON.stringify(reviewFormat.schema)).not.toContain("propertyNames")
   })
   it("does not accept review suggestions that rewrite already completed steps", async () => {
     const initial = manualLearningPlan(input.intent)
