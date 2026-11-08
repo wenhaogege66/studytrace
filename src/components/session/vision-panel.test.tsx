@@ -180,6 +180,26 @@ describe("reliable observation lifecycle", () => {
     await act(async () => worker.emit({ type: "ready" }))
     expect(screen.getByText(/观察中断，正在重新加载/)).toBeInTheDocument()
   })
+  it("covers stalled bitmap creation with the same finite watchdog", async () => {
+    vi.mocked(createImageBitmap).mockImplementation(() => new Promise(() => {}))
+    mount()
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    await act(async () => vi.advanceTimersByTimeAsync(2_500))
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(TestWorker.instances).toHaveLength(2)
+  })
+  it("releases the camera even when the worker message channel is broken", async () => {
+    mount()
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    worker.postMessage.mockImplementation(() => {
+      throw new Error("broken-channel")
+    })
+    fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
+    await act(async () => {})
+    expect(stopTrack).toHaveBeenCalledOnce()
+  })
   it("stops on identity change and never enables cloud without explicit selection", async () => {
     const { camera } = mount()
     await start()

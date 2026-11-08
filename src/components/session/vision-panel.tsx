@@ -244,7 +244,11 @@ export function VisionPanel({
         initTimeoutRef.current = null
         if (intervalRef.current) clearInterval(intervalRef.current)
         intervalRef.current = null
-        workerRef.current?.postMessage({ type: "stop" })
+        try {
+          workerRef.current?.postMessage({ type: "stop" })
+        } catch {
+          /* release the camera even if the worker channel is broken */
+        }
         workerRef.current?.terminate()
         workerRef.current = null
         streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -404,6 +408,13 @@ export function VisionPanel({
           const operationId = startOperationRef.current
           const frameId = ++frameSequenceRef.current
           pendingFrameRef.current = frameId
+          frameTimeoutRef.current = setTimeout(() => {
+            if (
+              workerRef.current === worker &&
+              pendingFrameRef.current === frameId
+            )
+              workerFailureRef.current()
+          }, 2_000)
           let bitmap: ImageBitmap | null = null
           try {
             bitmap = await createImageBitmap(video)
@@ -413,7 +424,8 @@ export function VisionPanel({
               document.hidden
             ) {
               bitmap.close()
-              inferenceBusyRef.current = false
+              if (pendingFrameRef.current === frameId)
+                inferenceBusyRef.current = false
               return
             }
             worker.postMessage(
@@ -425,14 +437,15 @@ export function VisionPanel({
               },
               [bitmap],
             )
-            frameTimeoutRef.current = setTimeout(
-              () => workerFailureRef.current(),
-              2_000,
-            )
           } catch {
             bitmap?.close()
-            inferenceBusyRef.current = false
-            workerFailureRef.current()
+            if (
+              workerRef.current === worker &&
+              pendingFrameRef.current === frameId
+            ) {
+              inferenceBusyRef.current = false
+              workerFailureRef.current()
+            }
           }
         })()
       },
@@ -806,8 +819,9 @@ export function VisionPanel({
       if (intervalRef.current) clearInterval(intervalRef.current)
       workerRef.current?.terminate()
       streamRef.current?.getTracks().forEach((track) => track.stop())
+      const lastObservedAt = detectorRef.current.lastTimestampMs ?? undefined
       void effectsQueueRef.current.then(async () => {
-        await finishActiveEventRef.current()
+        await finishActiveEventRef.current(lastObservedAt)
         await syncCameraStateRef.current(false)
       })
     }
