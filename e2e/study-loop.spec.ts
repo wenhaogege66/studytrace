@@ -11,6 +11,11 @@ test.beforeEach(async ({ page }, testInfo) => {
 })
 
 test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环", async ({ page }) => {
+  const cameraWrites: string[] = []
+  page.on("request", (request) => {
+    if (request.url().endsWith("/rest/v1/rpc/set_study_session_camera"))
+      cameraWrites.push(request.url())
+  })
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -47,7 +52,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
     page.getByText("你拒绝了摄像头授权。学习计时和手动复盘不会受影响。"),
   ).toBeVisible()
 
-  await page.getByRole("button", { name: "标记刚才偏离了任务" }).click()
+  await page.getByRole("button", { name: "标记刚才偏离了学习计划" }).click()
   await expect(
     page.getByText("已记录一次偏离，仅用于你的共现统计"),
   ).toBeVisible()
@@ -93,6 +98,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
   await page.getByRole("button", { name: "已完成 1" }).click()
   await expect(page.getByText("完成一次科创问题定义")).toBeVisible()
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
+  expect(cameraWrites).toEqual([])
 })
 
 test("大任务暂停后恢复同一会话，并在完成全部步骤后结束", async ({ page }) => {
@@ -120,10 +126,10 @@ test("大任务暂停后恢复同一会话，并在完成全部步骤后结束",
   ).toBeVisible()
   await page.getByRole("button", { name: /^(?:任务|学习计划)操作$/ }).click()
   await expect(
-    page.getByRole("menuitem", { name: "学习会话进行中，无法归档" }),
+    page.getByRole("menuitem", { name: "本次学习进行中，无法归档" }),
   ).toBeDisabled()
   await expect(
-    page.getByRole("menuitem", { name: "学习会话进行中，无法删除" }),
+    page.getByRole("menuitem", { name: "本次学习进行中，无法删除" }),
   ).toBeDisabled()
   await page.keyboard.press("Escape")
   await page.getByRole("button", { name: "继续学习" }).first().click()
@@ -174,6 +180,14 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   await page.getByRole("button", { name: "开始学习" }).click()
   await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })
   await page.getByRole("checkbox", { name: "完成唯一步骤" }).click()
+  await page.getByRole("button", { name: "结束本次学习", exact: true }).click()
+  await expect(
+    page.getByText("步骤已完成，返回后请对照完成标准确认完成计划。", {
+      exact: false,
+    }),
+  ).toBeVisible()
+  await expect(page.getByText(/下次开始会创建一段新的学习记录/)).toHaveCount(0)
+  await page.getByRole("button", { name: "继续保留暂停状态" }).click()
   await page.getByRole("button", { name: /^返回(?:任务台|学习计划)$/ }).click()
   await expect(page).toHaveURL(/\/app$/)
 
@@ -185,7 +199,7 @@ test("全步骤完成后等待确认，且支持复制或重新打开", async ({
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
   await page.getByRole("button", { name: /^确认完成(?:计划)?$/ }).click()
   const completionDialog = page.getByRole("alertdialog", {
-    name: "确认完成“完成一次待确认任务”？",
+    name: "确认完成这个学习计划？",
   })
   await completionDialog
     .getByRole("button", { name: /^确认完成(?:计划)?$/ })
@@ -232,9 +246,9 @@ test("任务可归档、在已归档列表恢复并重新开始", async ({ page 
   await page.getByRole("button", { name: /^(?:任务|学习计划)操作$/ }).click()
   await page.getByRole("menuitem", { name: /^归档(?:任务|学习计划)$/ }).click()
 
-  await expect(page.getByText("任务已归档", { exact: true })).toBeVisible()
+  await expect(page.getByText("学习计划已归档", { exact: true })).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "当前没有待完成任务" }),
+    page.getByRole("heading", { name: "当前没有待完成学习计划" }),
   ).toBeVisible()
   await expect(page.getByRole("button", { name: "已归档 1" })).toBeVisible()
   await page.getByRole("button", { name: "查看已归档" }).click()
@@ -249,7 +263,7 @@ test("任务可归档、在已归档列表恢复并重新开始", async ({ page 
     .click()
 
   await expect(
-    page.getByRole("heading", { name: "还没有归档任务" }),
+    page.getByRole("heading", { name: "还没有归档学习计划" }),
   ).toBeVisible()
   await page.getByRole("button", { name: "待完成 1" }).click()
   await expect(

@@ -147,6 +147,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const screenMountedRef = useRef(false)
   const pauseSessionRef = useRef(sessionMutations.pause.mutateAsync)
   const terminalNavigationRef = useRef(false)
+  const confirmedTerminalRef = useRef(false)
   const [finishing, setFinishing] = useState(false)
   const [finishDialogOpen, setFinishDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
@@ -155,6 +156,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   useLayoutEffect(() => {
     timerRef.current = timer
   }, [timer])
+  useLayoutEffect(() => {
+    if (
+      sessionQuery.data?.status === "completed" ||
+      sessionQuery.data?.status === "cancelled"
+    )
+      confirmedTerminalRef.current = true
+  }, [sessionQuery.data?.status])
 
   useEffect(() => {
     pauseSessionRef.current = sessionMutations.pause.mutateAsync
@@ -420,6 +428,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         taskId: task.id,
         accumulatedSeconds: accumulated,
       })
+      confirmedTerminalRef.current = true
       setFinishDialogOpen(false)
       if (!openReview)
         toast.success("学习计划已完成", {
@@ -448,6 +457,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         sessionId,
         accumulatedSeconds: accumulated,
       })
+      confirmedTerminalRef.current = true
       setCancelDialogOpen(false)
       router.push(openReview ? `/app/review/${sessionId}` : "/app")
     } catch (error) {
@@ -715,6 +725,12 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
               })
             }}
             onCameraStateChange={async (enabled) => {
+              if (confirmedTerminalRef.current) {
+                if (enabled) throw new Error("本次学习已经结束，无法开启观察")
+                // Terminal RPCs already seal camera/observation intervals.
+                // Do not retry an active-session off write after that fact.
+                return
+              }
               if (!enabled) await flushCoverage()
               const cameraVersion = cameraVersionRef.current + 1
               cameraVersionRef.current = cameraVersion
@@ -881,7 +897,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             <DialogTitle>结束这一段学习？</DialogTitle>
             <DialogDescription>
               这只结束本次学习，不会把“{task.title}
-              ”标记为完成。已勾选步骤会保留，下次开始会创建一段新的学习记录。
+              ”标记为完成。
+              {allStepsCompleted
+                ? "步骤已完成，返回后请对照完成标准确认完成计划。"
+                : "已勾选步骤会保留，下次开始会创建一段新的学习记录。"}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm leading-6 text-slate-700">

@@ -50,6 +50,7 @@ export type MockSupabaseHandle = {
   clearPersistentSession: (page: Page) => Promise<void>
   switchPersistentSessionToTarget: (page: Page) => Promise<void>
   studySessions: () => Row[]
+  observationCoverage: () => Row[]
 }
 
 function encodeJwtPart(value: Row) {
@@ -329,6 +330,8 @@ export async function installMockSupabase(
   const reviews: Row[] = []
   const planRevisions: Row[] = []
   const planSaves = new Map<string, { payload: string; taskId: string }>()
+  const consents = new Map<string, Row>()
+  const coverageBatches: Row[] = []
 
   if (options.seedRunningStudySession && currentUser) {
     const timestamp = now()
@@ -720,6 +723,123 @@ export async function installMockSupabase(
       return
     }
 
+    if (url.pathname === "/rest/v1/rpc/get_my_consents") {
+      const actor = userForRequest(request)
+      await fulfillJson(
+        route,
+        actor ? (consents.get(String(actor.id)) ?? {}) : {},
+        actor ? 200 : 401,
+      )
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/set_my_consent") {
+      const actor = userForRequest(request),
+        body = (request.postDataJSON() ?? {}) as Row
+      const records = actor ? (consents.get(String(actor.id)) ?? {}) : {}
+      if (
+        !actor ||
+        !["cloud_observation", "ai_reports", "weekly_reports"].includes(
+          String(body.p_feature),
+        ) ||
+        body.p_version !== "2026-11-08.v1" ||
+        (body.p_feature === "weekly_reports" &&
+          body.p_granted &&
+          (actor.is_anonymous ||
+            !(records.ai_reports as Row | undefined)?.granted))
+      ) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Consent requirements not met" },
+          403,
+        )
+        return
+      }
+      records[String(body.p_feature)] = {
+        granted: body.p_granted === true,
+        version: String(body.p_version),
+        granted_at: body.p_granted ? now() : null,
+        revoked_at: body.p_granted ? null : now(),
+        updated_at: now(),
+      }
+      if (
+        body.p_feature === "ai_reports" &&
+        !body.p_granted &&
+        records.weekly_reports
+      )
+        records.weekly_reports = {
+          ...(records.weekly_reports as Row),
+          granted: false,
+          revoked_at: now(),
+          updated_at: now(),
+        }
+      consents.set(String(actor.id), records)
+      await fulfillJson(route, records)
+      return
+    }
+    if (
+      url.pathname === "/rest/v1/rpc/record_observation_coverage" ||
+      url.pathname === "/rest/v1/rpc/heartbeat_observation_run"
+    ) {
+      const actor = userForRequest(request),
+        body = (request.postDataJSON() ?? {}) as Row
+      const session = sessions.find(
+        (row) => row.id === body.p_session_id && row.user_id === actor?.id,
+      )
+      if (
+        !session ||
+        session.status !== "running" ||
+        !session.camera_enabled ||
+        Number(session.state_version) !==
+          Number(body.p_expected_state_version) ||
+        Number(session.camera_version) !== Number(body.p_camera_version)
+      ) {
+        await fulfillJson(
+          route,
+          { code: "40001", message: "Observation heartbeat is stale" },
+          409,
+        )
+        return
+      }
+      if (url.pathname.endsWith("heartbeat_observation_run")) {
+        await fulfillJson(route, now())
+        return
+      }
+      const sequence = Number(body.p_sequence),
+        amount = Number(body.p_valid_milliseconds)
+      if (
+        !Number.isInteger(sequence) ||
+        sequence < 1 ||
+        !Number.isInteger(amount) ||
+        amount < 0 ||
+        amount > 10000
+      ) {
+        await fulfillJson(
+          route,
+          { code: "22023", message: "Invalid coverage batch" },
+          400,
+        )
+        return
+      }
+      if (
+        !coverageBatches.some(
+          (row) =>
+            row.session_id === session.id &&
+            row.camera_version === session.camera_version &&
+            row.sequence === sequence,
+        )
+      )
+        coverageBatches.push({
+          session_id: session.id,
+          camera_version: session.camera_version,
+          sequence,
+          valid_milliseconds: amount,
+        })
+      const total = coverageBatches
+        .filter((row) => row.session_id === session.id)
+        .reduce((sum, row) => sum + Number(row.valid_milliseconds), 0)
+      await fulfillJson(route, total)
+      return
+    }
     if (url.pathname === "/rest/v1/rpc/save_learning_plan") {
       const actor = userForRequest(request)
       const body = (request.postDataJSON() ?? {}) as Row
@@ -1847,5 +1967,6 @@ export async function installMockSupabase(
       )
     },
     studySessions: () => sessions,
+    observationCoverage: () => coverageBatches,
   }
 }

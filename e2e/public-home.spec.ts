@@ -23,7 +23,9 @@ test("公开首页清楚说明价值与隐私边界", async ({ page }) => {
   ).toBeVisible()
   await expect(page.getByText(/20 个有效投入片段和 10 个活跃日/)).toBeVisible()
   await expect(page.getByText(/至少需要 10 次用户主动标记/)).toBeVisible()
-  await expect(page.getByText("画面不离开设备", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("本地优先，云端需另行同意", { exact: true }),
+  ).toBeVisible()
   await expect(page.getByText("不做专注分数", { exact: true })).toBeVisible()
   await expect(
     page.getByRole("link", { name: "进入真实体验" }),

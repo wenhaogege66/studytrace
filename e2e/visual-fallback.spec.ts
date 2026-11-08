@@ -65,12 +65,14 @@ test("视觉模型加载失败时计时与手动复盘仍可用", async ({ page 
   await page.getByRole("button", { name: "开启本地观察" }).click()
 
   await expect(
-    page.getByText("视觉模型加载失败。计时与手动复盘仍可继续。"),
+    page.getByText(
+      "观察连续中断，已停止摄像头。请重试；计时与手动复盘仍可继续。",
+    ),
   ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "暂停", exact: true }),
   ).toBeEnabled()
   await expect(
-    page.getByRole("button", { name: "标记刚才偏离了任务" }),
+    page.getByRole("button", { name: "标记刚才偏离了学习计划" }),
   ).toBeEnabled()
 })

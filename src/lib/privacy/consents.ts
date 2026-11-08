@@ -54,6 +54,7 @@ async function captureIdentity(expectedUserId?: string) {
     client: createClient<Database>(url, key, {
       auth: {
         persistSession: false,
+        storageKey: `studytrace-consents-${crypto.randomUUID()}`,
         autoRefreshToken: false,
         detectSessionInUrl: false,
       },

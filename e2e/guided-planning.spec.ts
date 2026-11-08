@@ -190,7 +190,7 @@ test("空状态入口进入引导页，保存后学习关联采用版本与本�
   const mock = await installMockSupabase(page)
   await page.goto("/app")
   await page
-    .getByRole("heading", { name: "任务台还是空的" })
+    .getByRole("heading", { name: "学习计划还是空的" })
     .locator("..")
     .getByRole("button", { name: "制定计划" })
     .click()

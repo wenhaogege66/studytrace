@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 import { installMockSupabase } from "./mock-supabase"
+import { createManualPlan } from "./plan-actions"
 
 test.describe.configure({ mode: "serial" })
 
@@ -232,12 +233,7 @@ test("移动端洞察与任务主操作保持紧凑且可触达", async ({ page 
   }
 
   await page.goto("/app")
-  await page.getByRole("button", { name: "新建任务" }).first().click()
-  await page.getByLabel("任务标题").fill("验证移动端任务操作")
-  await page
-    .getByRole("textbox", { name: "步骤 1", exact: true })
-    .fill("完成一次触控验收")
-  await page.getByRole("button", { name: "创建任务" }).click()
+  await createManualPlan(page, "验证移动端任务操作", ["完成一次触控验收"])
 
   for (const label of ["开始学习", "待完成 1", "已完成 0", "已归档 0"]) {
     const box = await page.getByRole("button", { name: label }).boundingBox()
