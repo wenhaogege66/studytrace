@@ -10,6 +10,11 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { CloudObservation } from "@/components/session/cloud-observation"
+import {
+  parseObservationAgreement,
+  type ObservationAgreement,
+} from "@/lib/vision/agreement"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -41,9 +46,9 @@ import {
 } from "@/lib/vision/profiles"
 
 type WorkerMessage =
-  | { type: "ready" }
-  | { type: "observation"; observation: VisionObservation }
-  | { type: "error" | "frame_error"; message: string }
+  | { type: "ready"; objectDetectorReady?: boolean }
+  | { type: "observation"; frameId: number; observation: VisionObservation }
+  | { type: "error" | "frame_error"; frameId?: number; message: string }
   | { type: "stopped" }
 
 type VisionPhase =
@@ -66,13 +71,21 @@ export function VisionPanel({
   experimentMode,
   observationProfile,
   settings,
-  onObservationHeartbeat,
+  onObservationHeartbeat = () => undefined,
   onCameraStateChange,
+  observationAgreement,
+  onValidCoverage,
 }: {
   sessionId: string
   paused: boolean
   experimentMode: boolean
   observationProfile: ObservationProfile
+  observationAgreement?: ObservationAgreement
+  onValidCoverage?: (input: {
+    deltaMs: number
+    totalMs: number
+    at: string
+  }) => void
   settings?: {
     calibration_seconds: number
     sample_fps: number
@@ -85,10 +98,11 @@ export function VisionPanel({
     pitch_threshold_degrees: number
     reminders_enabled: boolean
   }
-  onObservationHeartbeat: () => Promise<void> | void
+  onObservationHeartbeat?: () => Promise<void> | void
   onCameraStateChange: (enabled: boolean) => Promise<void> | void
 }) {
   const profile = getObservationProfile(observationProfile)
+  const agreement = parseObservationAgreement(observationAgreement)
   const events = useEventMutations(sessionId)
   const [phase, setPhase] = useState<VisionPhase>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -115,6 +129,21 @@ export function VisionPanel({
   useEffect(() => {
     observationHeartbeatRef.current = onObservationHeartbeat
   }, [onObservationHeartbeat])
+  const frameSequenceRef = useRef(0)
+  const pendingFrameRef = useRef<number | null>(null)
+  const frameTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const workerFailureRef = useRef<() => void>(() => undefined)
+  const lastVideoTimeRef = useRef(-1)
+  const lastVideoChangeRef = useRef(0)
+  const lastValidAtRef = useRef(0)
+  const [coverageMs, setCoverageMs] = useState(0)
+  const [actualFps, setActualFps] = useState(0)
+  const [objectsReady, setObjectsReady] = useState(false)
+  const frameTimesRef = useRef<number[]>([])
+  const coverageCallbackRef = useRef(onValidCoverage)
+  useEffect(() => {
+    coverageCallbackRef.current = onValidCoverage
+  }, [onValidCoverage])
 
   const thresholds: VisionThresholds = useMemo(
     () =>
@@ -123,10 +152,7 @@ export function VisionPanel({
         : {
             ...DEFAULT_THRESHOLDS,
             calibrationMs: (settings?.calibration_seconds ?? 3) * 1_000,
-            faceAbsentMs:
-              (settings?.face_absent_seconds ?? 5) *
-              1_000 *
-              profile.faceAbsentMultiplier,
+            faceAbsentMs: (agreement.absenceSeconds ?? 60) * 1_000,
             directionHoldMs: (settings?.direction_hold_seconds ?? 3) * 1_000,
             neutralRecoveryMs:
               (settings?.neutral_recovery_seconds ?? 1) * 1_000,
@@ -136,7 +162,7 @@ export function VisionPanel({
             yawDegrees: settings?.yaw_threshold_degrees ?? 25,
             pitchDegrees: settings?.pitch_threshold_degrees ?? 20,
           },
-    [experimentMode, profile.faceAbsentMultiplier, settings],
+    [experimentMode, agreement.absenceSeconds, settings],
   )
   const thresholdRef = useRef(thresholds)
   useEffect(() => {
@@ -207,8 +233,13 @@ export function VisionPanel({
       if (stoppingRef.current) return
       stoppingRef.current = true
       try {
+        window.dispatchEvent(new Event("studytrace:observation-stopping"))
+        if (mountedRef.current) setPhase("idle")
         startOperationRef.current += 1
         if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
+        if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
+        pendingFrameRef.current = null
+        lastValidAtRef.current = 0
         initTimeoutRef.current = null
         if (intervalRef.current) clearInterval(intervalRef.current)
         intervalRef.current = null
@@ -219,7 +250,9 @@ export function VisionPanel({
         streamRef.current = null
         if (videoRef.current) videoRef.current.srcObject = null
         await effectsQueueRef.current
-        const eventClosed = await finishActiveEvent()
+        const eventClosed = await finishActiveEvent(
+          detectorRef.current.lastTimestampMs ?? undefined,
+        )
         inferenceBusyRef.current = false
         detectorRef.current = createDetectorState()
         const cameraStateSynced = await syncCameraState(false)
@@ -338,12 +371,25 @@ export function VisionPanel({
   )
 
   const startSampling = useCallback(() => {
-    const fps = Math.max(1, Math.min(10, settings?.sample_fps ?? 4))
+    const fps = 4
+    if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = setInterval(
       () => {
         void (async () => {
           const video = videoRef.current
           const worker = workerRef.current
+          if (document.hidden) {
+            void stop()
+            return
+          }
+          if (video && video.currentTime === lastVideoTimeRef.current) {
+            if (
+              lastVideoChangeRef.current &&
+              Date.now() - lastVideoChangeRef.current > 3_000
+            )
+              void stop("摄像头画面已冻结，观察已停止。计时仍可继续。")
+            return
+          }
           if (
             !video ||
             !worker ||
@@ -352,27 +398,50 @@ export function VisionPanel({
           )
             return
           inferenceBusyRef.current = true
+          lastVideoTimeRef.current = video.currentTime
+          lastVideoChangeRef.current = Date.now()
+          const operationId = startOperationRef.current
+          const frameId = ++frameSequenceRef.current
+          pendingFrameRef.current = frameId
+          let bitmap: ImageBitmap | null = null
           try {
-            const bitmap = await createImageBitmap(video)
+            bitmap = await createImageBitmap(video)
+            if (
+              operationId !== startOperationRef.current ||
+              worker !== workerRef.current ||
+              document.hidden
+            ) {
+              bitmap.close()
+              inferenceBusyRef.current = false
+              return
+            }
             worker.postMessage(
               {
                 type: "detect",
                 bitmap,
                 timestampMs: performance.timeOrigin + performance.now(),
+                frameId,
               },
               [bitmap],
             )
+            frameTimeoutRef.current = setTimeout(
+              () => workerFailureRef.current(),
+              2_000,
+            )
           } catch {
+            bitmap?.close()
             inferenceBusyRef.current = false
+            workerFailureRef.current()
           }
         })()
       },
       Math.round(1_000 / fps),
     )
-  }, [settings?.sample_fps])
+  }, [stop])
 
   const start = async () => {
     if (stoppingRef.current) return
+    if (document.hidden) return
     if (!profile.cameraEnabled) {
       toast.info("这个任务设置为离开设备完成，不会请求摄像头")
       return
@@ -413,6 +482,17 @@ export function VisionPanel({
         return
       }
       streamRef.current = stream
+      lastVideoTimeRef.current = -1
+      lastVideoChangeRef.current = Date.now()
+      setCoverageMs(0)
+      setActualFps(0)
+      frameTimesRef.current = []
+      stream.getVideoTracks?.().forEach((track) =>
+        track.addEventListener?.("ended", () => {
+          if (operationId === startOperationRef.current)
+            void stop("摄像头已断开，观察已停止。计时仍可继续。")
+        }),
+      )
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -426,111 +506,199 @@ export function VisionPanel({
       }
       setPhase("loading")
       setStatusText("正在本地加载视觉模型")
-      const worker = new Worker(
-        new URL("../../workers/vision.worker.ts", import.meta.url),
-        { type: "module" },
-      )
-      workerRef.current = worker
-      worker.addEventListener(
-        "message",
-        (event: MessageEvent<WorkerMessage>) => {
+      let restarts = 0
+      let consecutiveErrors = 0
+      const launchWorker = () => {
+        const worker = new Worker(
+          new URL("../../workers/vision.worker.ts", import.meta.url),
+          { type: "module" },
+        )
+        workerRef.current = worker
+        const recover = () => {
           if (
             operationId !== startOperationRef.current ||
             workerRef.current !== worker
           )
             return
-          if (event.data.type === "ready") {
-            if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
-            initTimeoutRef.current = null
-            setStatusText("正在同步本次观察区间")
-            void (async () => {
-              const cameraStateSynced = await syncCameraState(
-                true,
-                () =>
-                  mountedRef.current &&
-                  operationId === startOperationRef.current,
-              )
-              if (
-                !mountedRef.current ||
-                operationId !== startOperationRef.current
-              )
-                return
-              if (!cameraStateSynced) {
-                await stop(
-                  "观察区间未能同步，已安全关闭本地摄像头。请检查网络后重试。",
-                )
-                return
-              }
-              setPhase("calibrating")
-              setCalibrationWaitingForFace(true)
-              setCalibrationProgress(0)
-              setStatusText("等待你进入画面，识别到有效面部后再开始基线采集")
-              startSampling()
-            })()
+          if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
+          if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
+          if (intervalRef.current) clearInterval(intervalRef.current)
+          worker.terminate()
+          inferenceBusyRef.current = false
+          pendingFrameRef.current = null
+          lastValidAtRef.current = 0
+          const oldLast = detectorRef.current.lastTimestampMs
+          effectsQueueRef.current = effectsQueueRef.current
+            .then(() => finishActiveEvent(oldLast ?? undefined))
+            .then(() => undefined)
+          detectorRef.current = createDetectorState()
+          if (++restarts > 2) {
+            void stop(
+              "观察连续中断，已停止摄像头。请重试；计时与手动复盘仍可继续。",
+            )
             return
           }
-          if (event.data.type === "observation") {
-            inferenceBusyRef.current = false
-            const result = processObservation(
-              detectorRef.current,
-              event.data.observation,
-              thresholdRef.current,
-              profile.policy,
+          setPhase("loading")
+          setStatusText(`观察中断，正在重新加载（${restarts}/2）`)
+          launchWorker()
+        }
+        workerFailureRef.current = recover
+        worker.addEventListener("error", recover)
+        worker.addEventListener("messageerror", recover)
+        worker.addEventListener(
+          "message",
+          (event: MessageEvent<WorkerMessage>) => {
+            if (
+              operationId !== startOperationRef.current ||
+              workerRef.current !== worker
             )
-            detectorRef.current = result.state
-            if (!result.state.calibrated) {
-              const waitingForFace =
-                result.state.calibrationStartedAtMs === null
-              setCalibrationWaitingForFace(waitingForFace)
-              if (waitingForFace) {
+              return
+            if (event.data.type === "ready") {
+              if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
+              initTimeoutRef.current = null
+              setObjectsReady(event.data.objectDetectorReady === true)
+              setStatusText("正在同步本次观察区间")
+              void (async () => {
+                const cameraStateSynced = await syncCameraState(true, () => mountedRef.current && operationId === startOperationRef.current && workerRef.current === worker)
+                if (!mountedRef.current || operationId !== startOperationRef.current || workerRef.current !== worker) return
+                if (!cameraStateSynced) {
+                  await stop("观察区间未能同步，已安全关闭本地摄像头。请检查网络后重试。")
+                  return
+                }
+                setPhase("calibrating")
+                setCalibrationWaitingForFace(true)
                 setCalibrationProgress(0)
-                setStatusText(
-                  result.state.active?.kind === "face_absent"
-                    ? "持续未在画面，已记录事件；等待你进入画面"
-                    : "等待你进入画面，识别到有效面部后再开始基线采集",
+                setStatusText("等待你进入画面，识别到有效面部后再开始基线采集")
+                startSampling()
+              })()
+              return
+            }
+            if (event.data.type === "observation") {
+              if (event.data.frameId !== pendingFrameRef.current) return
+              if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
+              frameTimeoutRef.current = null
+              pendingFrameRef.current = null
+              inferenceBusyRef.current = false
+              consecutiveErrors = 0
+              const previousCoverage = detectorRef.current.validCoverageMs
+              const result = processObservation(
+                detectorRef.current,
+                event.data.observation,
+                thresholdRef.current,
+                {
+                  faceAbsent: agreement.absenceSeconds !== null,
+                  yaw: agreement.screenDirection && profile.policy.yaw,
+                  pitch: false,
+                },
+              )
+              detectorRef.current = result.state
+              const deltaMs = result.state.validCoverageMs - previousCoverage
+              if (event.data.observation.valid !== false) {
+                lastValidAtRef.current = Date.now()
+                frameTimesRef.current = [
+                  ...frameTimesRef.current.filter(
+                    (at) => at > Date.now() - 5_000,
+                  ),
+                  Date.now(),
+                ]
+                const times = frameTimesRef.current
+                const span =
+                  times.length > 1 ? times[times.length - 1] - times[0] : 0
+                setActualFps(
+                  span > 0
+                    ? Math.round(((times.length - 1) * 10_000) / span) / 10
+                    : 0,
                 )
               } else {
-                const elapsed =
-                  event.data.observation.timestampMs -
-                  result.state.calibrationStartedAtMs!
-                setCalibrationProgress(
-                  Math.min(
-                    99,
-                    (elapsed / thresholdRef.current.calibrationMs) * 100,
-                  ),
-                )
-                setStatusText(
-                  observationProfile === "study_paper_v1"
-                    ? "请保持平时的阅读姿势，正在建立本地基线"
-                    : "请自然面向屏幕，正在采集中性姿态",
-                )
+                lastValidAtRef.current = 0
+                setStatusText("画面质量不足，当前无法判断")
               }
+              if (deltaMs > 0) {
+                setCoverageMs((value) => value + deltaMs)
+                coverageCallbackRef.current?.({
+                  deltaMs,
+                  totalMs: result.state.validCoverageMs,
+                  at: new Date(
+                    event.data.observation.timestampMs,
+                  ).toISOString(),
+                })
+              }
+              if (!result.state.calibrated) {
+                const waitingForFace =
+                  result.state.calibrationStartedAtMs === null
+                setCalibrationWaitingForFace(waitingForFace)
+                if (waitingForFace) {
+                  setCalibrationProgress(0)
+                  setStatusText(
+                    result.state.active?.kind === "face_absent"
+                      ? "持续未在画面，已记录事件；等待你进入画面"
+                      : "等待你进入画面，识别到有效面部后再开始基线采集",
+                  )
+                } else {
+                  const elapsed =
+                    event.data.observation.timestampMs -
+                    result.state.calibrationStartedAtMs!
+                  setCalibrationProgress(
+                    Math.min(
+                      99,
+                      (elapsed / thresholdRef.current.calibrationMs) * 100,
+                    ),
+                  )
+                  setStatusText(
+                    observationProfile === "study_paper_v1"
+                      ? "请保持平时的阅读姿势，正在建立本地基线"
+                      : "请自然面向屏幕，正在采集中性姿态",
+                  )
+                }
+              }
+              if (result.effects.length) {
+                effectsQueueRef.current = effectsQueueRef.current
+                  .then(() => handleEffects(result.effects))
+                  .catch(() => undefined)
+              }
+              return
             }
-            if (result.effects.length) {
+            if (event.data.type === "frame_error") {
+              if (event.data.frameId !== pendingFrameRef.current) return
+              if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
+              inferenceBusyRef.current = false
+              pendingFrameRef.current = null
+              lastValidAtRef.current = 0
+              const reset = processObservation(
+                detectorRef.current,
+                {
+                  timestampMs: Date.now(),
+                  facePresent: false,
+                  yaw: null,
+                  pitch: null,
+                  valid: false,
+                },
+                thresholdRef.current,
+              )
+              detectorRef.current = reset.state
               effectsQueueRef.current = effectsQueueRef.current
-                .then(() => handleEffects(result.effects))
+                .then(() => handleEffects(reset.effects))
                 .catch(() => undefined)
+              setStatusText("单帧无效，未累计观察覆盖")
+              if (++consecutiveErrors >= 3) recover()
+              return
             }
-            return
-          }
-          if (event.data.type === "frame_error") {
-            inferenceBusyRef.current = false
-            return
-          }
-          if (event.data.type === "error") {
-            void stop(`${event.data.message}。计时与手动复盘仍可继续。`)
-          }
-        },
-      )
-      initTimeoutRef.current = setTimeout(() => {
-        if (
-          operationId !== startOperationRef.current ||
-          workerRef.current !== worker
+            if (event.data.type === "error") {
+              recover()
+            }
+          },
         )
-          return
-        void stop("视觉模型加载超时，已关闭摄像头。计时与手动复盘仍可继续。")
-      }, VISION_MODEL_INIT_TIMEOUT_MS)
-      worker.postMessage({ type: "init" })
+        initTimeoutRef.current = setTimeout(() => {
+          if (
+            operationId !== startOperationRef.current ||
+            workerRef.current !== worker
+          )
+            return
+          recover()
+        }, VISION_MODEL_INIT_TIMEOUT_MS)
+        worker.postMessage({ type: "init" })
+      }
+      launchWorker()
     } catch (cameraError) {
       if (!mountedRef.current || operationId !== startOperationRef.current)
         return
@@ -597,6 +765,20 @@ export function VisionPanel({
   useEffect(() => {
     if (paused && phase !== "idle" && phase !== "error") void stop()
   }, [paused, phase, stop])
+  useEffect(() => {
+    const hidden = () => {
+      if (document.hidden) void stop()
+    }
+    const identity = () => {
+      void stop()
+    }
+    document.addEventListener("visibilitychange", hidden)
+    window.addEventListener("studytrace:identity-changing", identity)
+    return () => {
+      document.removeEventListener("visibilitychange", hidden)
+      window.removeEventListener("studytrace:identity-changing", identity)
+    }
+  }, [stop])
 
   useEffect(() => {
     if (phase !== "calibrating" && phase !== "observing") return
@@ -617,6 +799,7 @@ export function VisionPanel({
       mountedRef.current = false
       startOperationRef.current += 1
       if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
+      if (frameTimeoutRef.current) clearTimeout(frameTimeoutRef.current)
       if (intervalRef.current) clearInterval(intervalRef.current)
       workerRef.current?.terminate()
       streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -635,10 +818,10 @@ export function VisionPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Eye className="size-5 text-indigo-700" /> 场景化本地观察
+              <Eye className="size-5 text-indigo-700" /> 过程观察
             </CardTitle>
             <CardDescription className="mt-1">
-              {profile.description} 原始画面不会上传。
+              {profile.description} 默认仅本地处理；可选云端处理需单独授权。
             </CardDescription>
           </div>
           {experimentMode ? (
@@ -666,6 +849,7 @@ export function VisionPanel({
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-slate-950">
               <video
                 ref={videoRef}
+                data-session-id={sessionId}
                 muted
                 playsInline
                 className="size-full -scale-x-100 object-cover"
@@ -687,10 +871,37 @@ export function VisionPanel({
                   {statusText}
                 </span>
                 <span className="font-mono">
-                  {settings?.sample_fps ?? 4} FPS
+                  有效 {actualFps.toFixed(1)} FPS
                 </span>
               </div>
             </div>
+            <div
+              className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500"
+              aria-live="polite"
+            >
+              <span>有效观察覆盖 {Math.floor(coverageMs / 1_000)} 秒</span>
+              <span>
+                本地物体检测：{objectsReady ? "可用（人物／手机）" : "未就绪"}
+              </span>
+              <span>平板和具体使用行为仅由可选云端分析</span>
+            </div>
+            <CloudObservation
+              active={phase === "observing" && !paused}
+              experimentMode={experimentMode}
+              agreement={agreement}
+              videoRef={videoRef}
+              lastValidAtRef={lastValidAtRef}
+              onCandidate={(ids) => {
+                void events.refresh?.()
+                if (settings?.reminders_enabled ?? true) {
+                  toast("核对一下观察约定", {
+                    description:
+                      "连续两组采样中疑似出现约定外设备使用。请确认、解释或删除，不代表注意力判断。",
+                  })
+                  void events.reminder.mutateAsync(ids[0] ?? null)
+                }
+              }}
+            />
 
             {phase === "calibrating" ? (
               <div>

@@ -20,9 +20,13 @@ export type TaskDisplayStatus =
   | "archived"
 export type SessionStatus = "running" | "paused" | "completed" | "cancelled"
 export type BehaviorEventType =
-  "face_absent" | "head_direction_change" | "manual"
+  | "face_absent"
+  | "head_direction_change"
+  | "manual"
+  | "phone_use"
+  | "tablet_use"
 export type EventDirection = "left" | "right" | "down" | "unknown"
-export type EventSource = "vision" | "simulation" | "manual"
+export type EventSource = "vision" | "simulation" | "manual" | "cloud_vision"
 export type CompletionStatus =
   "completed" | "partially_completed" | "not_completed"
 export type SessionOutcome = CompletionStatus

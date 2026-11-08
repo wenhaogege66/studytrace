@@ -617,6 +617,10 @@ export type Database = {
         Args: { p_session_id: string; p_target_minutes: number; p_energy_before: string | null }
         Returns: Database["public"]["Tables"]["study_sessions"]["Row"]
       }
+      get_my_consents: { Args: never; Returns: Json }
+      set_my_consent: { Args: { p_feature: string; p_granted: boolean; p_version: string }; Returns: Json }
+      prepare_cloud_observation: { Args: { p_session_id: string; p_window_id: string; p_started_at: string; p_ended_at: string }; Returns: Json }
+      finish_cloud_observation: { Args: { p_window_id: string; p_result: Json; p_model: string }; Returns: Json }
       cancel_study_session: {
         Args: { p_accumulated_seconds: number; p_session_id: string }
         Returns: {

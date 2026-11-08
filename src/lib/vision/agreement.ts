@@ -28,7 +28,9 @@ export function agreementForProfile(
     : { ...DEFAULT_OBSERVATION_AGREEMENT }
 }
 
-export function parseObservationAgreement(value: unknown): ObservationAgreement {
+export function parseObservationAgreement(
+  value: unknown,
+): ObservationAgreement {
   const result = observationAgreementSchema.safeParse(value)
   return result.success ? result.data : { ...DEFAULT_OBSERVATION_AGREEMENT }
 }

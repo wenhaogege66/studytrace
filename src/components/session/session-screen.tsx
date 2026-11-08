@@ -80,6 +80,8 @@ function eventLabel(event: BehaviorEvent) {
   if (event.source === "simulation") return "模拟事件"
   if (event.event_type === "face_absent") return "未在画面"
   if (event.event_type === "manual") return "手动标记"
+  if (event.event_type === "phone_use") return "疑似约定外手机使用 · 待你核对"
+  if (event.event_type === "tablet_use") return "疑似约定外平板使用 · 待你核对"
   const directions: Record<string, string> = {
     left: "向左",
     right: "向右",
@@ -673,6 +675,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             paused={timer.mode !== "running"}
             experimentMode={session.experiment_mode}
             observationProfile={session.observation_profile}
+            observationAgreement={
+              (
+                session as typeof session & {
+                  observation_agreement?: import("@/lib/vision/agreement").ObservationAgreement
+                }
+              ).observation_agreement
+            }
             settings={settingsQuery.data}
             onObservationHeartbeat={async () => {
               await sessionMutations.observationHeartbeat.mutateAsync({

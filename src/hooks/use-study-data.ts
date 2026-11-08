@@ -479,6 +479,7 @@ export function useEventMutations(sessionId: string) {
     })
 
   return {
+    refresh,
     create: useMutation({
       mutationFn: (input: {
         type: BehaviorEventType

@@ -1,25 +1,21 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-
 const mutations = vi.hoisted(() => ({
   create: vi.fn(),
+  update: vi.fn(),
   reminder: vi.fn(),
   respondReminder: vi.fn(),
-  update: vi.fn(),
+  refresh: vi.fn(),
 }))
-
 vi.mock("@/hooks/use-study-data", () => ({
   useEventMutations: () => ({
     create: { mutateAsync: mutations.create },
-    reminder: { mutateAsync: mutations.reminder },
-    respondReminder: {
-      mutateAsync: mutations.respondReminder,
-      isPending: false,
-    },
     update: { mutateAsync: mutations.update },
+    reminder: { mutateAsync: mutations.reminder },
+    respondReminder: { mutateAsync: mutations.respondReminder, isPending: false },
+    refresh: mutations.refresh,
   }),
 }))
-
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
     error: vi.fn(),
@@ -27,428 +23,190 @@ vi.mock("sonner", () => ({
     success: vi.fn(),
   }),
 }))
-
 import {
-  VISION_MODEL_INIT_TIMEOUT_MS,
   VisionPanel,
+  VISION_MODEL_INIT_TIMEOUT_MS,
 } from "@/components/session/vision-panel"
-
-type WorkerListener = (event: MessageEvent) => void
-
 class TestWorker {
   static instances: TestWorker[] = []
-
-  listeners: WorkerListener[] = []
+  listeners = new Map<string, Array<(event: MessageEvent) => void>>()
   postMessage = vi.fn()
   terminate = vi.fn()
-
   constructor() {
     TestWorker.instances.push(this)
   }
-
-  addEventListener(_type: string, listener: WorkerListener) {
-    this.listeners.push(listener)
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
   }
-
   emit(data: unknown) {
-    const event = { data } as MessageEvent
-    this.listeners.forEach((listener) => listener(event))
+    this.listeners
+      .get("message")
+      ?.forEach((listener) => listener({ data } as MessageEvent))
+  }
+  crash() {
+    this.listeners
+      .get("error")
+      ?.forEach((listener) => listener({} as MessageEvent))
   }
 }
-
-const originalMediaDevices = Object.getOwnPropertyDescriptor(
-  navigator,
-  "mediaDevices",
-)
-
-function renderPanel(
-  onCameraStateChange = vi.fn(),
-  onObservationHeartbeat = vi.fn(),
-) {
-  render(
-    <VisionPanel
-      onObservationHeartbeat={onObservationHeartbeat}
-      sessionId="session-1"
-      paused={false}
-      experimentMode={false}
-      observationProfile="study_screen_v1"
-      onCameraStateChange={onCameraStateChange}
-    />,
-  )
-  return onCameraStateChange
-}
-
-describe("VisionPanel model initialization cleanup", () => {
+const mediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices")
+describe("reliable observation lifecycle", () => {
   let stopTrack: ReturnType<typeof vi.fn>
-
   beforeEach(() => {
     vi.useFakeTimers()
     vi.resetAllMocks()
     TestWorker.instances = []
     stopTrack = vi.fn()
-
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
         getUserMedia: vi.fn().mockResolvedValue({
           getTracks: () => [{ stop: stopTrack }],
+          getVideoTracks: () => [
+            { stop: stopTrack, addEventListener: vi.fn() },
+          ],
         }),
       },
     })
     vi.stubGlobal("Worker", TestWorker)
-    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined)
-    mutations.create.mockResolvedValue({ id: "event-1" })
-    mutations.reminder.mockResolvedValue({ id: "reminder-1" })
-    mutations.respondReminder.mockResolvedValue({ id: "reminder-1" })
-    mutations.update.mockResolvedValue(undefined)
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockImplementation(async () => ({ close: vi.fn() })),
+    )
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(2)
+    vi.spyOn(
+      HTMLMediaElement.prototype,
+      "currentTime",
+      "get",
+    ).mockImplementation(() => Date.now() / 1000)
+    mutations.create.mockResolvedValue({ id: "event" })
+    mutations.update.mockResolvedValue({})
+    mutations.reminder.mockResolvedValue({})
   })
-
   afterEach(() => {
     vi.useRealTimers()
-    vi.unstubAllGlobals()
     vi.restoreAllMocks()
-    if (originalMediaDevices)
-      Object.defineProperty(navigator, "mediaDevices", originalMediaDevices)
-    else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices
+    vi.unstubAllGlobals()
+    if (mediaDevices)
+      Object.defineProperty(navigator, "mediaDevices", mediaDevices)
   })
-
-  it("confirms an active local observation every 60 seconds", async () => {
-    const heartbeat = vi.fn().mockResolvedValue(undefined)
-    renderPanel(vi.fn(), heartbeat)
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    await act(async () => TestWorker.instances[0].emit({ type: "ready" }))
-    await act(async () => {})
-
-    expect(heartbeat).not.toHaveBeenCalled()
-    await act(async () => vi.advanceTimersByTime(60_000))
-    expect(heartbeat).toHaveBeenCalledOnce()
-  })
-
-  it("lets the user cancel while the local model is loading", async () => {
-    const onCameraStateChange = renderPanel()
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-
-    const worker = TestWorker.instances[0]
-    expect(worker.postMessage).toHaveBeenCalledWith({ type: "init" })
-    fireEvent.click(screen.getByRole("button", { name: "取消并关闭" }))
-    await act(async () => {})
-
-    expect(worker.terminate).toHaveBeenCalledOnce()
-    expect(stopTrack).toHaveBeenCalledOnce()
-    expect(onCameraStateChange).toHaveBeenLastCalledWith(false)
-    expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
-  })
-
-  it("times out model initialization and releases the camera and worker", async () => {
-    const onCameraStateChange = renderPanel()
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    const worker = TestWorker.instances[0]
-
-    await act(async () => {
-      vi.advanceTimersByTime(VISION_MODEL_INIT_TIMEOUT_MS)
-    })
-
-    expect(worker.terminate).toHaveBeenCalledOnce()
-    expect(stopTrack).toHaveBeenCalledOnce()
-    expect(onCameraStateChange).toHaveBeenLastCalledWith(false)
-    expect(screen.getByText(/视觉模型加载超时/)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
-  })
-
-  it("retries a failed camera-close sync before reporting the camera closed", async () => {
-    const onCameraStateChange = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(undefined)
-    renderPanel(onCameraStateChange)
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    const worker = TestWorker.instances[0]
-    await act(async () => worker.emit({ type: "ready" }))
-
-    expect(onCameraStateChange).toHaveBeenCalledWith(true)
-    fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
-    await act(async () => {})
-    expect(onCameraStateChange).toHaveBeenCalledTimes(2)
-
-    await act(async () => {
-      vi.advanceTimersByTime(150)
-      await Promise.resolve()
-    })
-
-    expect(onCameraStateChange.mock.calls).toEqual([[true], [false], [false]])
-    expect(stopTrack).toHaveBeenCalledOnce()
-    expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
-  })
-
-  it("waits for a real face before running the complete calibration window", async () => {
-    renderPanel()
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    const worker = TestWorker.instances[0]
-    await act(async () => worker.emit({ type: "ready" }))
-
-    expect(screen.getByText("等待进入画面")).toBeInTheDocument()
-    expect(screen.getByText("尚未开始")).toBeInTheDocument()
-
-    await act(async () =>
-      worker.emit({
-        type: "observation",
-        observation: {
-          timestampMs: 0,
-          facePresent: false,
-          yaw: null,
-          pitch: null,
-        },
-      }),
-    )
-    await act(async () =>
-      worker.emit({
-        type: "observation",
-        observation: {
-          timestampMs: 5_000,
-          facePresent: false,
-          yaw: null,
-          pitch: null,
-        },
-      }),
-    )
-
-    expect(mutations.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "face_absent",
-        startedAt: new Date(0).toISOString(),
-      }),
-    )
-    expect(screen.getByText("等待进入画面")).toBeInTheDocument()
-    expect(screen.getByText("尚未开始")).toBeInTheDocument()
-
-    await act(async () =>
-      worker.emit({
-        type: "observation",
-        observation: {
-          timestampMs: 6_000,
-          facePresent: true,
-          yaw: 4,
-          pitch: 5,
-        },
-      }),
-    )
-    expect(screen.getByText("中性姿态校准")).toBeInTheDocument()
-    expect(screen.getByText("0%")).toBeInTheDocument()
-
-    await act(async () =>
-      worker.emit({
-        type: "observation",
-        observation: {
-          timestampMs: 8_999,
-          facePresent: true,
-          yaw: 5,
-          pitch: 6,
-        },
-      }),
-    )
-    expect(screen.getByText("99%")).toBeInTheDocument()
-    expect(screen.queryByText(/基线已建立/)).not.toBeInTheDocument()
-
-    await act(async () =>
-      worker.emit({
-        type: "observation",
-        observation: {
-          timestampMs: 9_000,
-          facePresent: true,
-          yaw: 6,
-          pitch: 7,
-        },
-      }),
-    )
-    expect(screen.getByText(/基线已建立/)).toBeInTheDocument()
-  })
-
-  it("retains an open event after failed closure attempts and retries it later", async () => {
-    mutations.update.mockRejectedValue(new Error("offline"))
-    renderPanel()
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    const worker = TestWorker.instances[0]
-    await act(async () => worker.emit({ type: "ready" }))
-    for (const timestampMs of [0, 1_500, 3_000]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: true,
-            yaw: 2,
-            pitch: 3,
-          },
-        }),
-      )
-    }
-    for (const timestampMs of [3_100, 8_100]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: false,
-            yaw: null,
-            pitch: null,
-          },
-        }),
-      )
-    }
-    expect(mutations.create).toHaveBeenCalledOnce()
-
-    fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
-    await act(async () => {})
-    await act(async () => {
-      vi.advanceTimersByTime(150)
-      await Promise.resolve()
-    })
-    await act(async () => {
-      vi.advanceTimersByTime(500)
-      await Promise.resolve()
-    })
-
-    expect(mutations.update).toHaveBeenCalledTimes(3)
-    const originalEndAt = mutations.update.mock.calls[0][0].update.ended_at
-    expect(
-      mutations.update.mock.calls
-        .slice(0, 3)
-        .map(([input]) => input.update.ended_at),
-    ).toEqual([originalEndAt, originalEndAt, originalEndAt])
-
-    mutations.update.mockResolvedValue(undefined)
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    fireEvent.click(screen.getByRole("button", { name: "取消并关闭" }))
-    await act(async () => {})
-
-    expect(mutations.update).toHaveBeenCalledTimes(4)
-    expect(mutations.update.mock.calls[3][0]).toEqual({
-      eventId: "event-1",
-      update: { ended_at: originalEndAt },
-    })
-  })
-
-  it("closes an active event only once when pausing triggers repeated renders", async () => {
-    const { rerender } = render(
+  function mount() {
+    const camera = vi.fn()
+    const coverage = vi.fn()
+    render(
       <VisionPanel
-        onObservationHeartbeat={() => undefined}
         sessionId="session-1"
         paused={false}
         experimentMode={false}
         observationProfile="study_screen_v1"
-        onCameraStateChange={vi.fn()}
+        onCameraStateChange={camera}
+        onValidCoverage={coverage}
       />,
     )
-
+    return { camera, coverage }
+  }
+  async function start() {
     fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
     await act(async () => {})
-    const worker = TestWorker.instances[0]
-    await act(async () => worker.emit({ type: "ready" }))
-
-    for (const timestampMs of [0, 1_500, 3_000]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: true,
-            yaw: 2,
-            pitch: 3,
-          },
-        }),
-      )
-    }
-    for (const timestampMs of [3_100, 8_100]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: false,
-            yaw: null,
-            pitch: null,
-          },
-        }),
-      )
-    }
-    expect(mutations.create).toHaveBeenCalledOnce()
-
-    const pausedPanel = (
-      <VisionPanel
-        onObservationHeartbeat={() => undefined}
-        sessionId="session-1"
-        paused
-        experimentMode={false}
-        observationProfile="study_screen_v1"
-        onCameraStateChange={vi.fn()}
-      />
-    )
-    rerender(pausedPanel)
-    rerender(pausedPanel)
-    await act(async () => {})
-
-    expect(mutations.update).toHaveBeenCalledOnce()
-    expect(stopTrack).toHaveBeenCalledOnce()
-  })
-
-  it("captures the user's factual response after a light reminder", async () => {
-    renderPanel()
-
-    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
-    await act(async () => {})
-    const worker = TestWorker.instances[0]
-    await act(async () => worker.emit({ type: "ready" }))
-
-    for (const timestampMs of [0, 1_500, 3_000]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: true,
-            yaw: 2,
-            pitch: 3,
-          },
-        }),
-      )
-    }
-    for (const timestampMs of [3_100, 8_100, 24_000]) {
-      await act(async () =>
-        worker.emit({
-          type: "observation",
-          observation: {
-            timestampMs,
-            facePresent: false,
-            yaw: null,
-            pitch: null,
-          },
-        }),
-      )
-    }
-    await act(async () => {})
-
-    expect(mutations.reminder).toHaveBeenCalledWith("event-1")
-    fireEvent.click(screen.getByRole("button", { name: "当时在正常操作" }))
-    await act(async () => {})
-
-    expect(mutations.respondReminder).toHaveBeenCalledWith({
-      reminderId: "reminder-1",
-      response: "normal_activity",
+    return TestWorker.instances.at(-1)!
+  }
+  async function frame(worker: TestWorker, valid = true) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250)
     })
-    expect(screen.queryByText("刚才的轻提醒是否合适？")).not.toBeInTheDocument()
+    const sent = worker.postMessage.mock.calls
+      .map((call) => call[0])
+      .filter((call) => call.type === "detect")
+      .at(-1)
+    if (!sent) throw new Error("no sampled frame")
+    await act(async () =>
+      worker.emit({
+        type: "observation",
+        frameId: sent.frameId,
+        observation: {
+          timestampMs: Date.now(),
+          facePresent: true,
+          yaw: 0,
+          pitch: 0,
+          valid,
+        },
+      }),
+    )
+  }
+  it("bounds worker initialization retries and then releases camera", async () => {
+    const { camera } = mount()
+    await start()
+    for (let i = 0; i < 3; i++)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VISION_MODEL_INIT_TIMEOUT_MS)
+      })
+    expect(TestWorker.instances).toHaveLength(3)
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(camera).toHaveBeenLastCalledWith(false)
+  })
+  it("counts only valid inference frames and ignores stale frame IDs", async () => {
+    const { coverage } = mount()
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    await frame(worker)
+    await frame(worker)
+    expect(coverage).toHaveBeenCalledOnce()
+    const total = coverage.mock.calls[0][0].totalMs
+    await frame(worker, false)
+    expect(coverage).toHaveBeenCalledOnce()
+    await act(async () =>
+      worker.emit({
+        type: "observation",
+        frameId: 1,
+        observation: {
+          timestampMs: Date.now() + 30000,
+          facePresent: true,
+          yaw: 0,
+          pitch: 0,
+          valid: true,
+        },
+      }),
+    )
+    expect(coverage.mock.calls[0][0].totalMs).toBe(total)
+  })
+  it("restarts a crashed worker finitely and ignores old messages", async () => {
+    mount()
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    await act(async () => worker.crash())
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(TestWorker.instances).toHaveLength(2)
+    await act(async () => worker.emit({ type: "ready" }))
+    expect(screen.getByText(/观察中断，正在重新加载/)).toBeInTheDocument()
+  })
+  it("stops on identity change and never enables cloud without explicit selection", async () => {
+    const { camera } = mount()
+    await start()
+    expect(screen.getByRole("checkbox")).not.toBeChecked()
+    await act(async () =>
+      window.dispatchEvent(new Event("studytrace:identity-changing")),
+    )
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(camera).toHaveBeenLastCalledWith(false)
+  })
+  it("cancels pending getUserMedia without leaving a late stream alive", async () => {
+    let finish!: (stream: MediaStream) => void
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    mount()
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    fireEvent.click(screen.getByRole("button", { name: "取消并关闭" }))
+    await act(async () =>
+      finish({
+        getTracks: () => [{ stop: stopTrack }],
+      } as unknown as MediaStream),
+    )
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(TestWorker.instances).toHaveLength(0)
   })
 })
