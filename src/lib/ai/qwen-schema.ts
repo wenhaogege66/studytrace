@@ -15,7 +15,6 @@ const childSchemas = [
   "items",
   "additionalProperties",
   "unevaluatedProperties",
-  "additionalItems",
   "unevaluatedItems",
   "contains",
   "not",
@@ -29,11 +28,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Only schema keywords are visited; property names and literal data stay intact. */
-function withoutPropertyNames(schema: ProviderJsonSchema): ProviderJsonSchema {
+function withoutUnsupportedKeywords(
+  schema: ProviderJsonSchema,
+): ProviderJsonSchema {
   const result = structuredClone(schema)
   const visit = (value: unknown) => {
     if (!isObject(value)) return
     delete value.propertyNames
+    delete value.additionalItems
     for (const key of schemaMaps) {
       const children = value[key]
       if (isObject(children)) Object.values(children).forEach(visit)
@@ -56,7 +58,7 @@ function withoutPropertyNames(schema: ProviderJsonSchema): ProviderJsonSchema {
 }
 
 /**
- * Qwen strict output rejects propertyNames (Model Studio structured-output docs).
+ * Qwen strict output rejects propertyNames and additionalItems.
  * https://help.aliyun.com/zh/model-studio/qwen-structured-output
  * Adapt only the provider-facing schema. The original Zod validator still checks
  * every constraint, including record-key limits and custom business refinements.
@@ -64,7 +66,7 @@ function withoutPropertyNames(schema: ProviderJsonSchema): ProviderJsonSchema {
 export function qwenStructuredSchema<T>(schema: z.ZodType<T>): Schema<T> {
   const original = asSchema<T>(schema)
   return jsonSchema<T>(
-    async () => withoutPropertyNames(await original.jsonSchema),
+    async () => withoutUnsupportedKeywords(await original.jsonSchema),
     {
       validate: async (value) => {
         const result = await schema.safeParseAsync(value)
