@@ -113,13 +113,15 @@ describe("planning provider boundaries", () => {
   })
   it("uses the compatible provider-facing schema for prepare and review", async () => {
     const plan = manualLearningPlan(input.intent)
-    mocks.generateText.mockResolvedValueOnce({ output: { kind: "plan", plan } })
+    mocks.generateText.mockResolvedValueOnce({
+      output: { response: { kind: "plan", plan } },
+    })
     await prepareLearningPlan(input)
     const prepareFormat =
       await mocks.generateText.mock.calls[0][0].output.responseFormat
     expect(prepareFormat.type).toBe("json")
     expect(prepareFormat.schema.type).toBe("object")
-    expect(prepareFormat.schema.oneOf).toHaveLength(2)
+    expect(prepareFormat.schema.properties.response.oneOf).toHaveLength(2)
     expect(JSON.stringify(prepareFormat.schema)).not.toContain("propertyNames")
     expect(JSON.stringify(prepareFormat.schema)).not.toContain(
       "additionalItems",
