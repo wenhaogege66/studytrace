@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test"
 
 import { manualLearningPlan } from "../src/lib/planning/manual"
 import { installMockSupabase } from "./mock-supabase"
+import { createManualPlan } from "./plan-actions"
 
 test("具体意图、一次修改点评、观察约定与实际采用版本一致", async ({
   page,
@@ -181,4 +182,39 @@ test("推荐未修改不调用复核，AI 失败后仍能手动制定", async ({
   await page.getByRole("button", { name: "确认方案" }).click()
   await expect(page.getByLabel("学习方式")).toBeVisible()
   expect(reviews).toBe(0)
+})
+
+test("空状态入口进入引导页，保存后学习关联采用版本与本次安排", async ({
+  page,
+}) => {
+  const mock = await installMockSupabase(page)
+  await page.goto("/app")
+  await page
+    .getByRole("heading", { name: "任务台还是空的" })
+    .locator("..")
+    .getByRole("button", { name: "制定计划" })
+    .click()
+  await expect(page).toHaveURL(/\/app\/plans\/new/)
+  await page.getByRole("link", { name: "学迹学习计划首页" }).click()
+  await createManualPlan(page, "检查采用版本后的学习安排", ["阅读并记录"], 40)
+  await page.getByRole("button", { name: "开始学习" }).click()
+  await expect(page).toHaveURL(/\/app\/session\//)
+  const session = mock.studySessions()[0]
+  expect(session.plan_revision_id).toEqual(expect.any(String))
+  expect(session.target_minutes).toBe(25)
+  expect(session.observation_agreement).toMatchObject({
+    phone: "ignored",
+    tablet: "ignored",
+  })
+  await expect(page.getByText(/已关联采用方案/)).toBeVisible()
+  await page.locator("summary").filter({ hasText: "本次安排" }).click()
+  await page.getByLabel("目标分钟", { exact: true }).fill("18")
+  await page.getByLabel("开始时的主观精力（可选）").selectOption("steady")
+  await page.getByRole("button", { name: "保存本次安排" }).click()
+  await expect(page.getByText("本次学习安排已保存")).toBeVisible()
+  expect(mock.studySessions()[0]).toMatchObject({
+    target_minutes: 18,
+    energy_before: "steady",
+    plan_revision_id: session.plan_revision_id,
+  })
 })
