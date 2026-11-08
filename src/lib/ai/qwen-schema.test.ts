@@ -10,6 +10,70 @@ import {
 import { manualLearningPlan } from "@/lib/planning/manual"
 
 describe("Qwen structured-output schema compatibility", () => {
+  it.each(["oneOf", "anyOf"])(
+    "adds the redundant root object type to an object-only %s without wrapping the payload",
+    async (keyword) => {
+      const branches = [
+        z.object({ kind: z.literal("note"), text: z.string() }),
+        z.object({ kind: z.literal("count"), total: z.number() }),
+      ] as const
+      const schema =
+        keyword === "oneOf"
+          ? z.discriminatedUnion("kind", branches)
+          : z.union(branches)
+      const original = await asSchema(schema).jsonSchema
+      expect(original).not.toHaveProperty("type")
+      expect(original).toHaveProperty(keyword)
+      const adapted = qwenStructuredSchema(schema)
+      expect(await adapted.jsonSchema).toEqual({ ...original, type: "object" })
+      expect(original).not.toHaveProperty("type")
+      await expect(
+        adapted.validate!({ kind: "note", text: "复习错题" }),
+      ).resolves.toEqual({
+        success: true,
+        value: { kind: "note", text: "复习错题" },
+      })
+      await expect(
+        adapted.validate!({ kind: "count", total: 3 }),
+      ).resolves.toEqual({
+        success: true,
+        value: { kind: "count", total: 3 },
+      })
+      await expect(
+        adapted.validate!({ kind: "count", total: "three" }),
+      ).resolves.toMatchObject({ success: false })
+    },
+  )
+
+  it("does not add object type to mixed-type root or nested unions", async () => {
+    const mixed = z.union([
+      z.object({ note: z.string() }),
+      z.string(),
+      z.null(),
+    ])
+    const original = await asSchema(mixed).jsonSchema
+    const adapted = qwenStructuredSchema(mixed)
+    expect(await adapted.jsonSchema).toEqual(original)
+    expect(await adapted.jsonSchema).not.toHaveProperty("type")
+    await expect(adapted.validate!("a note")).resolves.toMatchObject({
+      success: true,
+      value: "a note",
+    })
+    await expect(adapted.validate!(null)).resolves.toMatchObject({
+      success: true,
+      value: null,
+    })
+    const nested = z.object({
+      choice: z.union([
+        z.object({ a: z.string() }),
+        z.object({ b: z.string() }),
+      ]),
+    })
+    expect(await qwenStructuredSchema(nested).jsonSchema).toEqual(
+      await asSchema(nested).jsonSchema,
+    )
+  })
+
   it("removes record propertyNames at nested schema locations without mutating Zod", async () => {
     const record = z.record(z.string().max(4), z.string().max(8))
     const schema = z.object({
