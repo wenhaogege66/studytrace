@@ -3,6 +3,7 @@ import { generateText, Output } from "ai"
 import { z } from "zod"
 
 import { validateQwenBaseURL } from "@/lib/ai/task-plan"
+import { qwenStructuredSchema } from "@/lib/ai/qwen-schema"
 import {
   learningPlanSchema,
   planningQuestionSchema,
@@ -113,7 +114,9 @@ export async function prepareLearningPlan(
 ) {
   const { output } = await generateText({
     model: configuredModel(),
-    output: Output.object({ schema: generatedResponseSchema }),
+    output: Output.object({
+      schema: qwenStructuredSchema(generatedResponseSchema),
+    }),
     system: planningInstructions,
     prompt: JSON.stringify(input),
     temperature: 0,
@@ -131,7 +134,9 @@ export async function reviewLearningPlan(
 ) {
   const { output } = await generateText({
     model: configuredModel(),
-    output: Output.object({ schema: planningReviewSchema }),
+    output: Output.object({
+      schema: qwenStructuredSchema(planningReviewSchema),
+    }),
     system: [
       planningInstructions,
       "现在只做一次修改点评。比较 initial 和 current，点评可观察的变化、可行性与取舍，不猜测用户动机。尊重当前采用的目的与约定。",
