@@ -266,21 +266,27 @@ select extensions.dblink_exec(
 );
 select extensions.dblink_exec('insight_task_writer', 'set role authenticated');
 
-select extensions.dblink_send_query(
-  'insight_task_writer',
-  $$with inserted as (
-      insert into public.tasks (
-        user_id, title, steps, priority, estimated_minutes
-      ) values (
-        'abababab-abab-4aba-8aba-abababababab',
-        '并发锁序测试',
-        '[{"id":"lock-step","title":"验证锁序","completed":false}]',
-        'low', 5
+do $send_task$
+begin
+  if extensions.dblink_send_query(
+    'insight_task_writer',
+    $query$with inserted as (
+        insert into public.tasks (
+          user_id, title, steps, priority, estimated_minutes
+        ) values (
+          'abababab-abab-4aba-8aba-abababababab',
+          '并发锁序测试',
+          '[{"id":"lock-step","title":"验证锁序","completed":false}]',
+          'low', 5
+        )
+        returning id
       )
-      returning id
-    )
-    select id::text from inserted$$
-);
+      select id::text from inserted$query$
+  ) is distinct from 1 then
+    raise exception 'task INSERT async query was not sent';
+  end if;
+end;
+$send_task$;
 select pg_catalog.pg_sleep(0.1);
 
 do $$
@@ -319,6 +325,14 @@ begin
     as result(id text);
   if inserted_task_id is null then
     raise exception 'task INSERT did not resume after merge locks were released';
+  end if;
+  -- libpq requires the trailing empty result to be consumed before a dblink
+  -- connection can accept another asynchronous command.
+  if exists (
+    select 1 from extensions.dblink_get_result('insight_task_writer')
+      as drained(id text)
+  ) then
+    raise exception 'task INSERT returned an unexpected additional result';
   end if;
 end;
 $$;
@@ -367,13 +381,19 @@ select extensions.dblink_exec(
     end
   $lock$;$$
 );
-select extensions.dblink_send_query(
-  'insight_task_writer',
-  $$select (public.respond_to_reminder(
-      'abababab-3000-4aba-8aba-abababababab',
-      'normal_activity'
-    )).response$$
-);
+do $send_reminder$
+begin
+  if extensions.dblink_send_query(
+    'insight_task_writer',
+    $query$select (public.respond_to_reminder(
+        'abababab-3000-4aba-8aba-abababababab',
+        'normal_activity'
+      )).response$query$
+  ) is distinct from 1 then
+    raise exception 'reminder response async query was not sent';
+  end if;
+end;
+$send_reminder$;
 select pg_catalog.pg_sleep(0.1);
 
 -- If respond_to_reminder had already locked the row, this NOWAIT probe would
@@ -399,8 +419,14 @@ begin
   select result.response into saved_response
   from extensions.dblink_get_result('insight_task_writer')
     as result(response text);
-  if saved_response <> 'normal_activity' then
+  if saved_response is distinct from 'normal_activity' then
     raise exception 'reminder response did not resume after merge lock release';
+  end if;
+  if exists (
+    select 1 from extensions.dblink_get_result('insight_task_writer')
+      as drained(response text)
+  ) then
+    raise exception 'reminder response returned an unexpected additional result';
   end if;
 end;
 $$;
