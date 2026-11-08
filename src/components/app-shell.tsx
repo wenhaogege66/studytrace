@@ -14,6 +14,7 @@ import { useRef, type ReactNode } from "react"
 import { toast } from "sonner"
 
 import { AccountStatusButton } from "@/components/auth/account-status-button"
+import { ReportNotice } from "@/components/reports/report-notice"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
@@ -64,7 +65,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[var(--app-canvas)]">
-      <header className="sticky top-0 z-40 border-b border-indigo-100/80 bg-[color:color-mix(in_oklch,var(--app-canvas),white_45%)]/90 backdrop-blur-xl">
+      <header
+        data-app-chrome
+        className="sticky top-0 z-40 border-b border-indigo-100/80 bg-[color:color-mix(in_oklch,var(--app-canvas),white_45%)]/90 backdrop-blur-xl"
+      >
         <div className="mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:px-6">
           <Link
             href="/app"
@@ -143,10 +147,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-24 sm:px-6 sm:py-8 sm:pb-10">
+        {!pathname.startsWith("/app/session/") ? <ReportNotice /> : null}
         {children}
       </main>
 
       <nav
+        data-app-chrome
         className="fixed inset-x-4 bottom-4 z-40 grid grid-cols-4 rounded-2xl border border-indigo-100 bg-white/95 p-1.5 shadow-xl shadow-indigo-950/10 backdrop-blur sm:hidden"
         aria-label="移动端导航"
       >

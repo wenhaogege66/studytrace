@@ -203,3 +203,45 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  [data-app-chrome],
+  button,
+  select,
+  [role="switch"] {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  section,
+  article {
+    box-shadow: none !important;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+  details::details-content {
+    display: block !important;
+    content-visibility: visible !important;
+  }
+  details > * {
+    display: block !important;
+  }
+}
