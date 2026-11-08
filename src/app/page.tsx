@@ -62,8 +62,9 @@ const loop: Feature[] = [
 const principles: Feature[] = [
   {
     icon: EyeOff,
-    title: "画面不离开设备",
-    description: "视频、图片、音频、人脸关键点与人脸特征都不上传、不保存。",
+    title: "本地优先，云端需另行同意",
+    description:
+      "基础观察在本地运行；仅在单独授权后，向百炼发送低频压缩帧。应用不保存原始画面，不申请麦克风。",
   },
   {
     icon: CircleDotDashed,
@@ -211,7 +212,7 @@ export default function Home() {
                   <div>
                     <p className="font-medium">当前状态：中性姿态</p>
                     <p className="mt-1 text-sm text-emerald-800">
-                      帧在浏览器本地处理，网络中没有视频上传。
+                      当前示例为本地模式。云端过程观察需要另外授权。
                     </p>
                   </div>
                 </div>

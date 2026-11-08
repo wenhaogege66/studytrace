@@ -77,6 +77,7 @@ export type Database = {
         Row: {
           camera_version: number
           created_at: string
+          effective_milliseconds: number
           detector_version: string
           ended_at: string | null
           experiment_mode: boolean
@@ -93,6 +94,7 @@ export type Database = {
         Insert: {
           camera_version?: number
           created_at?: string
+          effective_milliseconds?: number
           detector_version: string
           ended_at?: string | null
           experiment_mode?: boolean
@@ -109,6 +111,7 @@ export type Database = {
         Update: {
           camera_version?: number
           created_at?: string
+          effective_milliseconds?: number
           detector_version?: string
           ended_at?: string | null
           experiment_mode?: boolean
@@ -609,6 +612,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      record_observation_coverage: {
+        Args: {
+          p_camera_version: number
+          p_expected_state_version: number
+          p_sequence: number
+          p_session_id: string
+          p_valid_milliseconds: number
+        }
+        Returns: number
+      }
       save_learning_plan: {
         Args: { p_request_id: string; p_task_id: string | null; p_expected_revision_id: string | null; p_plan: Json; p_revisions: Json }
         Returns: Database["public"]["Tables"]["tasks"]["Row"]
