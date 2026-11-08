@@ -378,7 +378,7 @@ create or replace function public.export_my_learning_records(p_table text,p_expe
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare result jsonb; sort_key text;
 begin
-  if auth.uid() is null or auth.uid()<>p_expected_user_id or not exists(select 1 from auth.users where id=auth.uid()) then
+  if auth.uid() is null or auth.uid() is distinct from p_expected_user_id or not exists(select 1 from auth.users where id=auth.uid()) then
     raise exception 'Authentication required' using errcode='42501';
   end if;
   if p_table not in ('tasks','study_sessions','behavior_events','reminder_events','reviews',
