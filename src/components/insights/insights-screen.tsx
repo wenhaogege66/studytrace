@@ -261,7 +261,7 @@ export function InsightsScreen({
         </div>
         <div
           className="inline-flex self-start rounded-xl bg-indigo-100/70 p-1"
-          aria-label="洞察时间范围"
+          aria-label="学习报告时间范围"
         >
           {windows.map((item) => (
             <Button
@@ -299,7 +299,7 @@ export function InsightsScreen({
       {!report.enabled ? (
         <Alert className="border-indigo-200 bg-white">
           <Sparkles />
-          <AlertTitle>长期洞察已关闭</AlertTitle>
+          <AlertTitle>学习记录统计已关闭</AlertTitle>
           <AlertDescription className="mt-2">
             已有事实记录会保留；关闭期间不会采集投入段、观察区间或任务步骤历史。重新开启后只从当下继续，不回填关闭区间。
             <Button
@@ -312,7 +312,7 @@ export function InsightsScreen({
               ) : (
                 <Sparkles />
               )}
-              开启洞察
+              开启学习记录统计
             </Button>
           </AlertDescription>
         </Alert>
@@ -330,7 +330,7 @@ export function InsightsScreen({
             />
             <Metric
               icon={CheckCircle2}
-              label="完成任务"
+              label="完成计划"
               value={String(report.overview.completed_tasks) + " 个"}
               note="按明确完成时间统计"
             />
@@ -513,7 +513,7 @@ export function InsightsScreen({
       <Separator />
       <section
         className="flex flex-col justify-between gap-5 rounded-2xl bg-white/60 px-5 py-4 sm:flex-row sm:items-center"
-        aria-label="洞察数据设置"
+        aria-label="学习记录统计设置"
       >
         <div className="flex items-start gap-3">
           <MapPin className="mt-0.5 size-4 text-slate-500" />
@@ -522,11 +522,12 @@ export function InsightsScreen({
               统计时区：{report.period.timezone}
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              修改时区会用新时区重新解释全部既有记录。跨时段会话的复盘与结果归到实际投入最长的时段；步骤改名前后的标题会保留在事实历史中。关闭洞察会立即封口并停止采集，但不会删除已有事实。
+              修改时区会用新时区重新解释全部既有记录。本次学习的复盘与结果归到投入最长的时段；步骤改名前后的标题保留在历史中。关闭学习记录统计会停止采集，但不删除已有事实，也不会替你撤回或开启
+              AI 报告授权。
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
           {browserTimezone !== report.period.timezone ? (
             <Button
               variant="outline"
@@ -539,13 +540,13 @@ export function InsightsScreen({
               使用设备时区
             </Button>
           ) : null}
-          <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700">
+          <label className="flex min-h-11 shrink-0 items-center gap-2 text-sm font-medium whitespace-nowrap text-slate-700">
             <Switch
               checked={report.enabled}
               onCheckedChange={(value) => void savePreferences(value)}
               disabled={preferences.isPending}
             />
-            生成长期洞察
+            记录学习事实
           </label>
         </div>
       </section>

@@ -580,8 +580,8 @@ function TaskRow({
       className={`overflow-hidden border-indigo-100 bg-white/92 py-0 transition-[border-color,background-color] hover:border-indigo-200 ${completed ? "bg-slate-50/85" : ""}`}
     >
       <CardContent className="p-0">
-        <div className="grid min-h-32 gap-x-4 gap-y-3 p-3.5 sm:min-h-24 sm:grid-cols-[auto_minmax(0,1fr)_10rem_auto] sm:items-center sm:gap-x-5 sm:py-3">
-          <div className="flex items-center gap-2 sm:flex-col sm:gap-1.5">
+        <div className="grid min-h-32 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 p-3.5 sm:min-h-24 sm:grid-cols-[auto_minmax(0,1fr)_10rem_auto] sm:gap-x-5 sm:py-3">
+          <div className="hidden items-center gap-2 sm:flex sm:flex-col sm:gap-1.5">
             <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-50">
               <TaskStateIcon status={displayStatus} />
             </span>
@@ -611,7 +611,10 @@ function TaskRow({
                   ? `下一步 · ${nextStep.title}`
                   : getObservationProfile(task.observation_profile).shortLabel}
             </p>
-            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 sm:hidden">
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 sm:hidden">
+              <Badge variant="outline" className={status.className}>
+                {status.label}
+              </Badge>
               <span>
                 {completedSteps}/{task.steps.length} 步
               </span>
@@ -645,7 +648,7 @@ function TaskRow({
             </p>
           </div>
 
-          <div className="col-span-full flex items-center justify-end gap-1 sm:col-span-1">
+          <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 sm:col-start-auto sm:row-start-auto">
             {readyToComplete ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
