@@ -28,7 +28,7 @@ export default defineConfig({
     {
       name: "mobile-chromium",
       use: { ...devices["Pixel 7"] },
-      testMatch: /public-home\.spec\.ts/,
+      testMatch: /(?:public-home|guided-planning)\.spec\.ts/,
     },
   ],
   webServer: {

@@ -44,7 +44,7 @@ export function LearningContextForm({ session }: { session: StudySession }) {
   }
   return (
     <details className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <summary className="min-h-8 cursor-pointer text-sm font-medium text-slate-700">
+      <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-slate-700">
         本次安排 · {session.target_minutes || 25} 分钟
         {session.plan_revision_id ? " · 已关联采用方案" : ""}
       </summary>

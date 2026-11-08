@@ -1419,13 +1419,8 @@ export function TaskDashboard() {
                             <Archive /> 查看已归档
                           </Button>
                         ) : null}
-                        <Button
-                          onClick={() => {
-                            setEditingTask(null)
-                            setDialogOpen(true)
-                          }}
-                        >
-                          <Plus /> 新建任务
+                        <Button onClick={() => router.push("/app/plans/new")}>
+                          <Plus /> 制定计划
                         </Button>
                       </div>
                     </>
@@ -1453,8 +1448,8 @@ export function TaskDashboard() {
                 >
                   <Sparkles /> 载入示例
                 </Button>
-                <Button onClick={() => setDialogOpen(true)}>
-                  <Plus /> 新建任务
+                <Button onClick={() => router.push("/app/plans/new")}>
+                  <Plus /> 制定计划
                 </Button>
               </div>
             </CardContent>
