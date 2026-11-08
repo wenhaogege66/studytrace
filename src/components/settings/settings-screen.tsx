@@ -181,6 +181,7 @@ export function SettingsScreen() {
         <TabsContent value="privacy" className="mt-5 space-y-5">
           <ConsentSettings
             key={user?.id}
+            userId={user?.id}
             isAnonymous={user?.is_anonymous !== false}
           />
           <Card className="border-indigo-100 bg-white/90">

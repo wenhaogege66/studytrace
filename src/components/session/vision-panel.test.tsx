@@ -114,7 +114,7 @@ describe("reliable observation lifecycle", () => {
     await act(async () => {})
     return TestWorker.instances.at(-1)!
   }
-  async function frame(worker: TestWorker, valid = true) {
+  async function frame(worker: TestWorker, valid = true, facePresent = true) {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(250)
     })
@@ -129,9 +129,9 @@ describe("reliable observation lifecycle", () => {
         frameId: sent.frameId,
         observation: {
           timestampMs: Date.now(),
-          facePresent: true,
-          yaw: 0,
-          pitch: 0,
+          facePresent,
+          yaw: facePresent ? 0 : null,
+          pitch: facePresent ? 0 : null,
           valid,
         },
       }),
@@ -235,6 +235,46 @@ describe("reliable observation lifecycle", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
     await act(async () => {})
     expect(stopTrack).toHaveBeenCalledOnce()
+  })
+  it("uses the latest reminder switch inside an already-running worker listener", async () => {
+    const settings = {
+      calibration_seconds: 3,
+      sample_fps: 4,
+      face_absent_seconds: 5,
+      direction_hold_seconds: 3,
+      neutral_recovery_seconds: 1,
+      reminder_delay_seconds: 15,
+      reminder_cooldown_seconds: 600,
+      yaw_threshold_degrees: 25,
+      pitch_threshold_degrees: 20,
+      reminders_enabled: true,
+    }
+    const camera = vi.fn()
+    const view = render(
+      <VisionPanel
+        sessionId="session-1"
+        paused={false}
+        experimentMode={true}
+        observationProfile="study_screen_v1"
+        settings={settings}
+        onCameraStateChange={camera}
+      />,
+    )
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    view.rerender(
+      <VisionPanel
+        sessionId="session-1"
+        paused={false}
+        experimentMode={true}
+        observationProfile="study_screen_v1"
+        settings={{ ...settings, reminders_enabled: false }}
+        onCameraStateChange={camera}
+      />,
+    )
+    for (let index = 0; index < 16; index++) await frame(worker, true, false)
+    expect(mutations.create).toHaveBeenCalledOnce()
+    expect(mutations.reminder).not.toHaveBeenCalled()
   })
   it("stops on identity change and never enables cloud without explicit selection", async () => {
     const { camera } = mount()

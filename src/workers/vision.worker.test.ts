@@ -164,4 +164,29 @@ describe("worker safety and object signals", () => {
     expect(mocks.closeFace).toHaveBeenCalledOnce()
     expect(mocks.closeObjects).toHaveBeenCalledOnce()
   })
+  it("does not infer absence when the auxiliary person model is unavailable", async () => {
+    handler({ data: { type: "stop" } } as MessageEvent)
+    mocks.createObjects.mockRejectedValueOnce(new Error("model-unavailable"))
+    handler({ data: { type: "init" } } as MessageEvent)
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenLastCalledWith({
+        type: "ready",
+        objectDetectorReady: false,
+      }),
+    )
+    mocks.face.mockReturnValue({
+      faceLandmarks: [],
+      facialTransformationMatrixes: [],
+    })
+    detect()
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        observation: expect.objectContaining({
+          facePresent: false,
+          valid: false,
+          usableForCloud: true,
+        }),
+      }),
+    )
+  })
 })
