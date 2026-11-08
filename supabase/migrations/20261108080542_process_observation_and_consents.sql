@@ -174,6 +174,10 @@ begin
   select * into previous from private.cloud_observation_windows
     where session_id=w.session_id and created_at<w.created_at order by created_at desc limit 1;
   final_result:=jsonb_build_object('status','complete','quality',p_result->>'quality','phone',p_result->>'phone','tablet',p_result->>'tablet','model',p_model);
+  final_result:=final_result||jsonb_build_object('usage',jsonb_build_object(
+    'inputTokens',least(10000000,greatest(0,coalesce((p_result#>>'{usage,inputTokens}')::integer,0))),
+    'outputTokens',least(10000000,greatest(0,coalesce((p_result#>>'{usage,outputTokens}')::integer,0)))
+  ));
   foreach rule in array array['phone','tablet'] loop
     if s.observation_agreement->>rule='restricted' and p_result->>'quality'='good' and p_result->>rule='possible'
       and previous.status='complete' and previous.camera_version=w.camera_version

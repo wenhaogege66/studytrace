@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     })
     const finished = await admin.rpc("finish_cloud_observation", {
       p_window_id: input.windowId,
-      p_result: result,
+      p_result: { ...result, usage },
       p_model: model,
     })
     if (finished.error)
