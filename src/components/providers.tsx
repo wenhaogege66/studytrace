@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState, type ReactNode } from "react"
 
+import { ActivityHeartbeat } from "@/components/auth/activity-heartbeat"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ExperienceProvider } from "@/components/experience/experience-provider"
@@ -25,7 +26,10 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={250}>
-        <ExperienceProvider>{children}</ExperienceProvider>
+        <ExperienceProvider>
+          <ActivityHeartbeat />
+          {children}
+        </ExperienceProvider>
         <Toaster richColors position="top-center" />
       </TooltipProvider>
     </QueryClientProvider>

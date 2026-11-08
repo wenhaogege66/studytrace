@@ -1,0 +1,15 @@
+export const productLanguage = {
+  plan: "学习计划",
+  draft: "推荐方案",
+  step: "执行步骤",
+  session: "本次学习",
+  observation: "过程观察",
+  agreement: "观察约定",
+  review: "学习复盘",
+  report: "学习报告",
+  createPlan: "制定计划",
+  startSession: "开始学习",
+  pauseSession: "暂停",
+  finishSession: "结束本次学习",
+  completePlan: "确认完成计划",
+} as const

@@ -1,6 +1,6 @@
 {
   "name": "studytrace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test && playwright test --config playwright.turnstile.config.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.44",

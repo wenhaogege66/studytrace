@@ -1,6 +1,5 @@
 "use client"
 
-import { Turnstile } from "@marsidev/react-turnstile"
 import {
   ArrowRight,
   Database,
@@ -9,10 +8,12 @@ import {
   RotateCcw,
   ShieldCheck,
 } from "lucide-react"
+import Link from "next/link"
 import { useState, type ReactNode } from "react"
 import { toast } from "sonner"
 
 import { AppShell } from "@/components/app-shell"
+import { TurnstileChallenge } from "@/components/auth/turnstile-challenge"
 import { useExperience } from "@/components/experience/experience-provider"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -95,12 +96,12 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             先把要做的事说清楚，再开始一段可复盘的学习。
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-pretty text-slate-600 sm:text-lg">
-            学迹把任务、计时、本地视觉观察与一次复盘连成闭环。它只记录可由你修正的行为事件，不上传摄像头画面，也不给你打“专注分”。
+            学迹把学习计划、计时、过程观察与学习复盘连成闭环。本地观察默认不上传；可选云端过程观察需单独授权，按约定短时发送压缩图像。不计算“专注分”。
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
               [Database, "匿名保存", "清除浏览器数据后不可恢复"],
-              [EyeOff, "本地识别", "画面与人脸关键点不上传"],
+              [EyeOff, "自主授权", "本地观察与可选云端处理分开"],
               [ShieldCheck, "你可修正", "确认、改写或硬删除事件"],
             ].map(([Icon, title, description]) => (
               <div
@@ -121,7 +122,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
           <CardHeader>
             <CardTitle className="text-2xl">开始体验</CardTitle>
             <CardDescription>
-              无需注册，也不会出现登录或登出流程。
+              无需先注册；可以直接匿名体验，或登录独立邮箱密码账号。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -129,8 +130,8 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
               <Database />
               <AlertTitle>匿名数据提示</AlertTitle>
               <AlertDescription>
-                换设备、清除本站浏览器数据或主动清除全部记录后，历史无法恢复；匿名记录默认最长保留
-                30 天。
+                换设备、清除本站浏览器数据或主动清除全部记录后，历史无法恢复；匿名身份连续
+                30 天无活动后才会被定时清理。
               </AlertDescription>
             </Alert>
 
@@ -153,7 +154,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
                 <p className="mb-3 text-sm text-slate-600">
                   完成一次安全校验后即进入产品。
                 </p>
-                <Turnstile
+                <TurnstileChallenge
                   siteKey={turnstileSiteKey}
                   onSuccess={(token) => void enter(token)}
                 />
@@ -163,7 +164,7 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             <Button
               size="lg"
               className="h-11 w-full"
-              disabled={!understood || status === "starting"}
+              disabled={!understood || status === "starting" || showChallenge}
               onClick={() => {
                 if (turnstileSiteKey) setShowChallenge(true)
                 else void enter()
@@ -180,6 +181,11 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
                   ? "等待安全校验"
                   : "开始体验"}
             </Button>
+            <div className="border-t border-slate-200 pt-4 text-center">
+              <Button variant="ghost" className="min-h-11" asChild>
+                <Link href="/auth">邮箱账号登录 / 注册</Link>
+              </Button>
+            </div>
             {error ? <p className="text-destructive text-sm">{error}</p> : null}
           </CardContent>
         </Card>

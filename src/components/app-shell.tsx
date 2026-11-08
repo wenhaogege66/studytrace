@@ -2,24 +2,32 @@
 
 import {
   BookOpenCheck,
+  ChartNoAxesCombined,
   Code2,
   Home,
   ListTodo,
   Settings,
-  Sparkles,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useRef, type ReactNode } from "react"
 import { toast } from "sonner"
 
+import { AccountStatusButton } from "@/components/auth/account-status-button"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
 import { cn } from "@/lib/utils"
+import { productLanguage } from "@/lib/product-language"
 
 const navigation = [
-  { href: "/app", label: "任务", icon: ListTodo, exact: true },
+  { href: "/app", label: productLanguage.plan, icon: ListTodo, exact: true },
+  {
+    href: "/app/insights",
+    label: productLanguage.report,
+    icon: ChartNoAxesCombined,
+    exact: false,
+  },
   { href: "/app/settings", label: "设置", icon: Settings, exact: false },
 ]
 
@@ -57,25 +65,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--app-canvas)]">
       <header className="sticky top-0 z-40 border-b border-indigo-100/80 bg-[color:color-mix(in_oklch,var(--app-canvas),white_45%)]/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:px-6">
           <Link
             href="/app"
             onNavigate={(event) => guardNavigation(event, "/app")}
-            className="group flex items-center gap-2.5"
-            aria-label="学迹任务首页"
+            className="group flex min-w-0 shrink-0 items-center gap-2.5"
+            aria-label="学迹学习计划首页"
           >
             <span className="grid size-9 place-items-center rounded-xl bg-indigo-700 text-white shadow-md shadow-indigo-900/15 transition-transform group-hover:-rotate-3">
               <BookOpenCheck className="size-5" />
             </span>
-            <span>
-              <span className="block text-sm font-semibold tracking-tight text-slate-950">
-                学迹 StudyTrace
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold tracking-tight text-slate-950">
+                学迹<span className="hidden sm:inline"> StudyTrace</span>
               </span>
-              <span className="block text-[10px] tracking-[0.16em] text-slate-500 uppercase">
+              <span className="hidden text-[10px] tracking-[0.16em] text-slate-500 uppercase md:block">
                 Learn · Observe · Review
               </span>
             </span>
           </Link>
+
+          <div className="sm:hidden">
+            <AccountStatusButton
+              onNavigate={(event) => guardNavigation(event, "/auth")}
+            />
+          </div>
 
           <nav
             className="hidden items-center gap-1 sm:flex"
@@ -101,6 +115,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Button>
               )
             })}
+            <AccountStatusButton
+              onNavigate={(event) => guardNavigation(event, "/auth")}
+            />
             <Separator orientation="vertical" className="mx-2 h-6" />
             <Button variant="ghost" size="icon" asChild>
               <Link
@@ -139,6 +156,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               key={href}
               href={href}
+              aria-current={active ? "page" : undefined}
               onNavigate={(event) => guardNavigation(event, href)}
               className={cn(
                 "flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium text-slate-500",
@@ -149,13 +167,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           )
         })}
-        <Link
-          href="/"
-          onNavigate={(event) => guardNavigation(event, "/")}
-          className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium text-slate-500"
-        >
-          <Sparkles className="size-4" /> 介绍
-        </Link>
       </nav>
     </div>
   )
