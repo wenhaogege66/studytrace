@@ -118,6 +118,8 @@ describe("planning provider boundaries", () => {
     const prepareFormat =
       await mocks.generateText.mock.calls[0][0].output.responseFormat
     expect(prepareFormat.type).toBe("json")
+    expect(prepareFormat.schema.type).toBe("object")
+    expect(prepareFormat.schema.oneOf).toHaveLength(2)
     expect(JSON.stringify(prepareFormat.schema)).not.toContain("propertyNames")
     expect(JSON.stringify(prepareFormat.schema)).not.toContain(
       "additionalItems",

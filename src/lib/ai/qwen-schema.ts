@@ -54,6 +54,22 @@ function withoutUnsupportedKeywords(
       Object.values(value.dependencies).forEach(visit)
   }
   visit(result)
+  const rootUnions = [result.oneOf, result.anyOf].filter(
+    (branches) => branches !== undefined,
+  )
+  if (
+    !Object.hasOwn(result, "type") &&
+    rootUnions.length > 0 &&
+    rootUnions.every(
+      (branches) =>
+        Array.isArray(branches) &&
+        branches.length > 0 &&
+        branches.every(
+          (branch) => isObject(branch) && branch.type === "object",
+        ),
+    )
+  )
+    result.type = "object"
   return result
 }
 
@@ -62,6 +78,7 @@ function withoutUnsupportedKeywords(
  * https://help.aliyun.com/zh/model-studio/qwen-structured-output
  * Adapt only the provider-facing schema. The original Zod validator still checks
  * every constraint, including record-key limits and custom business refinements.
+ * Object-only root unions receive their already-implied object type explicitly.
  */
 export function qwenStructuredSchema<T>(schema: z.ZodType<T>): Schema<T> {
   const original = asSchema<T>(schema)
