@@ -12,7 +12,10 @@ vi.mock("@/hooks/use-study-data", () => ({
     create: { mutateAsync: mutations.create },
     update: { mutateAsync: mutations.update },
     reminder: { mutateAsync: mutations.reminder },
-    respondReminder: { mutateAsync: mutations.respondReminder, isPending: false },
+    respondReminder: {
+      mutateAsync: mutations.respondReminder,
+      isPending: false,
+    },
     refresh: mutations.refresh,
   }),
 }))
@@ -144,6 +147,39 @@ describe("reliable observation lifecycle", () => {
     expect(TestWorker.instances).toHaveLength(3)
     expect(stopTrack).toHaveBeenCalledOnce()
     expect(camera).toHaveBeenLastCalledWith(false)
+  })
+  it("does not sample until the protected camera-state write has succeeded", async () => {
+    const { camera } = mount()
+    camera
+      .mockRejectedValueOnce(new Error("lost response"))
+      .mockResolvedValue(undefined)
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    expect(
+      worker.postMessage.mock.calls.some(
+        ([message]) => message.type === "detect",
+      ),
+    ).toBe(false)
+    await act(async () => vi.advanceTimersByTimeAsync(200))
+    expect(camera.mock.calls.filter(([enabled]) => enabled)).toHaveLength(2)
+    await frame(worker)
+  })
+  it("safely stops when the observation interval cannot be synchronized", async () => {
+    const { camera } = mount()
+    camera.mockImplementation(async (enabled: boolean) => {
+      if (enabled) throw new Error("database unavailable")
+    })
+    const worker = await start()
+    await act(async () => worker.emit({ type: "ready" }))
+    await act(async () => vi.advanceTimersByTimeAsync(1_000))
+    expect(camera.mock.calls.filter(([enabled]) => enabled)).toHaveLength(3)
+    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(
+      worker.postMessage.mock.calls.some(
+        ([message]) => message.type === "detect",
+      ),
+    ).toBe(false)
+    expect(screen.getByText(/观察区间未能同步/)).toBeInTheDocument()
   })
   it("counts only valid inference frames and ignores stale frame IDs", async () => {
     const { coverage } = mount()

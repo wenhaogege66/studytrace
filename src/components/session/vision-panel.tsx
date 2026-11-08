@@ -574,10 +574,23 @@ export function VisionPanel({
               setObjectsReady(event.data.objectDetectorReady === true)
               setStatusText("正在同步本次观察区间")
               void (async () => {
-                const cameraStateSynced = await syncCameraState(true, () => mountedRef.current && operationId === startOperationRef.current && workerRef.current === worker)
-                if (!mountedRef.current || operationId !== startOperationRef.current || workerRef.current !== worker) return
+                const cameraStateSynced = await syncCameraState(
+                  true,
+                  () =>
+                    mountedRef.current &&
+                    operationId === startOperationRef.current &&
+                    workerRef.current === worker,
+                )
+                if (
+                  !mountedRef.current ||
+                  operationId !== startOperationRef.current ||
+                  workerRef.current !== worker
+                )
+                  return
                 if (!cameraStateSynced) {
-                  await stop("观察区间未能同步，已安全关闭本地摄像头。请检查网络后重试。")
+                  await stop(
+                    "观察区间未能同步，已安全关闭本地摄像头。请检查网络后重试。",
+                  )
                   return
                 }
                 setPhase("calibrating")
