@@ -324,12 +324,12 @@ function AiReportPanelContent({ days }: { days: 7 | 30 }) {
           <DialogHeader>
             <DialogTitle>允许 AI 解读学习记录？</DialogTitle>
             <DialogDescription className="leading-7">
-              将向阿里云百炼发送本人聚合统计、采用方案和相关修订摘要，不发送摄像头画面。服务商会按自身数据处理条款处理请求；我们不承诺第三方零留存。你可以随时在设置中撤回。
+              将向阿里云百炼发送本人聚合统计、采用方案和相关修订摘要，不发送摄像头画面。百炼说明会依法存储模型与应用调用产生的数据；我们不承诺第三方零留存。你可以随时在设置中撤回后续处理授权。
             </DialogDescription>
           </DialogHeader>
           <a
             className="text-sm text-indigo-700 underline"
-            href="https://help.aliyun.com/zh/model-studio/"
+            href="https://help.aliyun.com/zh/model-studio/privacy-notice"
             target="_blank"
             rel="noreferrer"
           >
