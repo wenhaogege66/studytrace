@@ -64,6 +64,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import { PlanHistory } from "@/components/planning/plan-history"
 import {
   Select,
   SelectContent,
@@ -614,6 +615,15 @@ function TaskRow({
               </span>
               <span>预计 {task.estimated_minutes} 分钟</span>
             </div>
+            {task.due_at ? (
+              <p className="mt-1 text-xs text-slate-500">
+                截止{" "}
+                {new Date(task.due_at).toLocaleDateString("zh-CN", {
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            ) : null}
           </div>
 
           <div className="hidden min-w-0 sm:block">
@@ -887,6 +897,11 @@ function TaskRow({
             </div>
           </div>
         ) : null}
+        {expanded ? (
+          <div className="px-4 pb-4 sm:px-5">
+            <PlanHistory taskId={task.id} />
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -1139,13 +1154,8 @@ export function TaskDashboard() {
             )}{" "}
             载入示例
           </Button>
-          <Button
-            onClick={() => {
-              setEditingTask(null)
-              setDialogOpen(true)
-            }}
-          >
-            <Plus /> 新建任务
+          <Button onClick={() => router.push("/app/plans/new")}>
+            <Plus /> 制定计划
           </Button>
         </div>
       </section>
@@ -1311,8 +1321,7 @@ export function TaskDashboard() {
                           : null
                       }
                       onEdit={() => {
-                        setEditingTask(task)
-                        setDialogOpen(true)
+                        router.push(`/app/plans/new?task=${task.id}`)
                       }}
                       onStart={() => {
                         if (isCurrentSession && activeSession.data) {

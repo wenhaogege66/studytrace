@@ -31,6 +31,20 @@ describe("domain data conversions", () => {
 
   it("maps database task enums and step JSON into the product type", () => {
     const row: Tables<"tasks"> = {
+      intent_text: "测试任务",
+      planning_context: {},
+      learning_purpose: "",
+      completion_criterion: "完成步骤",
+      method_summary: "逐步执行",
+      suggested_session_minutes: 25,
+      due_at: null,
+      current_plan_revision_id: null,
+      observation_agreement: {
+        phone: "ignored",
+        tablet: "ignored",
+        absenceSeconds: 60,
+        screenDirection: false,
+      },
       id: "task-1",
       user_id: "user-1",
       title: "测试任务",

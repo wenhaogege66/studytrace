@@ -167,6 +167,10 @@ export type Database = {
       }
       study_sessions: {
         Row: {
+          plan_revision_id: string | null
+          target_minutes: number
+          energy_before: string | null
+          observation_agreement: Json
           accumulated_seconds: number
           camera_enabled: boolean
           camera_version: number
@@ -186,6 +190,10 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          plan_revision_id?: string | null
+          target_minutes?: number
+          energy_before?: string | null
+          observation_agreement?: Json
           accumulated_seconds?: number
           camera_enabled?: boolean
           camera_version?: number
@@ -205,6 +213,10 @@ export type Database = {
           user_id: string
         }
         Update: {
+          plan_revision_id?: string | null
+          target_minutes?: number
+          energy_before?: string | null
+          observation_agreement?: Json
           accumulated_seconds?: number
           camera_enabled?: boolean
           camera_version?: number
@@ -235,6 +247,15 @@ export type Database = {
       }
       tasks: {
         Row: {
+          intent_text: string
+          planning_context: Json
+          learning_purpose: string
+          completion_criterion: string
+          method_summary: string
+          suggested_session_minutes: number
+          due_at: string | null
+          current_plan_revision_id: string | null
+          observation_agreement: Json
           completed_at: string | null
           created_at: string
           estimated_minutes: number
@@ -248,6 +269,15 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          intent_text?: string
+          planning_context?: Json
+          learning_purpose?: string
+          completion_criterion?: string
+          method_summary?: string
+          suggested_session_minutes?: number
+          due_at?: string | null
+          current_plan_revision_id?: string | null
+          observation_agreement?: Json
           completed_at?: string | null
           created_at?: string
           estimated_minutes: number
@@ -261,6 +291,15 @@ export type Database = {
           user_id: string
         }
         Update: {
+          intent_text?: string
+          planning_context?: Json
+          learning_purpose?: string
+          completion_criterion?: string
+          method_summary?: string
+          suggested_session_minutes?: number
+          due_at?: string | null
+          current_plan_revision_id?: string | null
+          observation_agreement?: Json
           completed_at?: string | null
           created_at?: string
           estimated_minutes?: number
@@ -273,6 +312,36 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      task_plan_revisions: {
+        Row: {
+          id: string
+          user_id: string
+          task_id: string
+          ordinal: number
+          kind: string
+          snapshot: Json
+          changes: Json
+          comment: string
+          request_id: string | null
+          request_hash: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          task_id: string
+          ordinal: number
+          kind: string
+          snapshot: Json
+          changes?: Json
+          comment?: string
+          request_id?: string | null
+          request_hash?: string | null
+          created_at?: string
+        }
+        Update: { snapshot?: Json }
         Relationships: []
       }
       user_settings: {
@@ -343,6 +412,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      save_learning_plan: {
+        Args: { p_request_id: string; p_task_id: string | null; p_expected_revision_id: string | null; p_plan: Json; p_revisions: Json }
+        Returns: Database["public"]["Tables"]["tasks"]["Row"]
+      }
+      update_session_learning_context: {
+        Args: { p_session_id: string; p_target_minutes: number; p_energy_before: string | null }
+        Returns: Database["public"]["Tables"]["study_sessions"]["Row"]
+      }
       cancel_study_session: {
         Args: { p_accumulated_seconds: number; p_session_id: string }
         Returns: {

@@ -3,6 +3,10 @@ import {
   parseObservationProfile,
   type ObservationProfile,
 } from "@/lib/vision/profiles"
+import {
+  parseObservationAgreement,
+  type ObservationAgreement,
+} from "@/lib/vision/agreement"
 
 export type Priority = "low" | "medium" | "high"
 export type TaskStatus = "planned" | "in_progress" | "completed" | "archived"
@@ -29,21 +33,48 @@ export type TaskStep = {
   completed: boolean
 }
 
-export type Task = Omit<Tables<"tasks">, "steps" | "priority" | "status"> & {
-  steps: TaskStep[]
-  priority: Priority
-  status: TaskStatus
-  observation_profile: ObservationProfile
-}
+type PlanColumns =
+  | "intent_text"
+  | "planning_context"
+  | "learning_purpose"
+  | "completion_criterion"
+  | "method_summary"
+  | "suggested_session_minutes"
+  | "due_at"
+  | "current_plan_revision_id"
+  | "observation_agreement"
+type SessionPlanColumns =
+  | "plan_revision_id"
+  | "target_minutes"
+  | "energy_before"
+  | "observation_agreement"
+export type Task = Omit<
+  Tables<"tasks">,
+  "steps" | "priority" | "status" | PlanColumns
+> &
+  Partial<Omit<Pick<Tables<"tasks">, PlanColumns>, "observation_agreement">> & {
+    observation_agreement?: ObservationAgreement
+    steps: TaskStep[]
+    priority: Priority
+    status: TaskStatus
+    observation_profile: ObservationProfile
+  }
 
 export type StudySession = Omit<
   Tables<"study_sessions">,
-  "status" | "task_outcome" | "observation_profile"
-> & {
-  status: SessionStatus
-  task_outcome: SessionOutcome | null
-  observation_profile: ObservationProfile
-}
+  "status" | "task_outcome" | "observation_profile" | SessionPlanColumns
+> &
+  Partial<
+    Omit<
+      Pick<Tables<"study_sessions">, SessionPlanColumns>,
+      "observation_agreement"
+    >
+  > & {
+    observation_agreement?: ObservationAgreement
+    status: SessionStatus
+    task_outcome: SessionOutcome | null
+    observation_profile: ObservationProfile
+  }
 
 export type BehaviorEvent = Omit<
   Tables<"behavior_events">,
@@ -94,22 +125,30 @@ export function parseTaskSteps(value: Json): TaskStep[] {
   })
 }
 
-export function mapTask(row: Tables<"tasks">): Task {
+export function mapTask(
+  row: Omit<Tables<"tasks">, PlanColumns> &
+    Partial<Pick<Tables<"tasks">, PlanColumns>>,
+): Task {
   return {
     ...row,
     priority: row.priority as Priority,
     status: row.status as TaskStatus,
     steps: parseTaskSteps(row.steps),
     observation_profile: parseObservationProfile(row.observation_profile),
+    observation_agreement: parseObservationAgreement(row.observation_agreement),
   }
 }
 
-export function mapSession(row: Tables<"study_sessions">): StudySession {
+export function mapSession(
+  row: Omit<Tables<"study_sessions">, SessionPlanColumns> &
+    Partial<Pick<Tables<"study_sessions">, SessionPlanColumns>>,
+): StudySession {
   return {
     ...row,
     status: row.status as SessionStatus,
     task_outcome: row.task_outcome as SessionOutcome | null,
     observation_profile: parseObservationProfile(row.observation_profile),
+    observation_agreement: parseObservationAgreement(row.observation_agreement),
   }
 }
 
