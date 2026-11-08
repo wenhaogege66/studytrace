@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "feat/v03-*"]
 
 permissions:
   contents: read
@@ -13,6 +13,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  database:
+    name: Isolated database acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      STUDYTRACE_CI_PROJECT_ID: studytrace-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check pinned Supabase CLI
+        run: npx --yes supabase@2.75.0 --version
+
+      - name: Prepare isolated local project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = "true"
+          STUDYTRACE_CI_WORKDIR="$(mktemp -d "$RUNNER_TEMP/studytrace-db-ci.XXXXXX")"
+          mkdir -p "$STUDYTRACE_CI_WORKDIR/supabase"
+          cp supabase/config.toml "$STUDYTRACE_CI_WORKDIR/supabase/config.toml"
+          cp -R supabase/migrations "$STUDYTRACE_CI_WORKDIR/supabase/migrations"
+          sed -i "s/^project_id = .*/project_id = \"$STUDYTRACE_CI_PROJECT_ID\"/" "$STUDYTRACE_CI_WORKDIR/supabase/config.toml"
+          printf 'STUDYTRACE_CI_WORKDIR=%s\n' "$STUDYTRACE_CI_WORKDIR" >> "$GITHUB_ENV"
+
+      - name: Start local database, Auth and Data API
+        run: >-
+          npx --yes supabase@2.75.0 start
+          --workdir "$STUDYTRACE_CI_WORKDIR"
+          --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Run every SQL acceptance suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_suites=(supabase/tests/*.sql)
+          test "${#sql_suites[@]}" -ge 9
+          for sql_suite in "${sql_suites[@]}"; do
+            printf '::group::%s\n' "$sql_suite"
+            docker exec -i "supabase_db_$STUDYTRACE_CI_PROJECT_ID" \
+              psql --no-psqlrc --username postgres --dbname postgres \
+              --set ON_ERROR_STOP=1 --file - < "$sql_suite"
+            printf '::endgroup::\n'
+          done
+
+      - name: Stop only this CI project's containers and discard its data
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_ACTIONS:-}" = "true" && -n "${STUDYTRACE_CI_WORKDIR:-}" ]]; then
+            [[ "$STUDYTRACE_CI_PROJECT_ID" =~ ^studytrace-ci-[0-9]+-[0-9]+$ ]]
+            npx --yes supabase@2.75.0 stop \
+              --workdir "$STUDYTRACE_CI_WORKDIR" \
+              --project-id "$STUDYTRACE_CI_PROJECT_ID" --no-backup
+          fi
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
