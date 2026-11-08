@@ -35,35 +35,36 @@ type Feature = {
 const loop: Feature[] = [
   {
     icon: ListChecks,
-    title: "设计任务 · AI 先拆出第一版",
+    title: "学习计划 · 先明确目的与标准",
     description:
-      "说清目标后，由 AI 生成可编辑的步骤初稿；你再调整顺序、优先级与预计时长。",
+      "从一句学习意图开始，用选择题澄清范围与目的，再选择完成标准、方法和执行步骤。",
   },
   {
     icon: Clock3,
-    title: "持续执行 · 分多次推进",
+    title: "本次学习 · 分多次推进",
     description:
       "一个大任务可以跨多次执行会话继续。计时稳定保留，摄像头观察与轻提醒完全可选。",
   },
   {
     icon: RefreshCcw,
-    title: "回看过程 · 每次都可复盘",
+    title: "学习复盘 · 校正过程线索",
     description:
       "每次结束后都可确认或修正客观事件，写下下一次调整；暂时不复盘也不阻断任务推进。",
   },
   {
     icon: ChartNoAxesCombined,
-    title: "积累规律 · 样本足够再建议",
+    title: "学习报告 · 结论有真实依据",
     description:
-      "近 30 天至少积累 20 个有效投入片段和 10 个活跃日，才给出工作—休息区间与较适合时段；不足时只显示收集进度。",
+      "先看事实，再看可选 AI 解读。近 30 天达到 20 个有效片段和 10 个活跃日，才讨论长期规律。",
   },
 ]
 
 const principles: Feature[] = [
   {
     icon: EyeOff,
-    title: "画面不离开设备",
-    description: "视频、图片、音频、人脸关键点与人脸特征都不上传、不保存。",
+    title: "本地优先，云端需另行同意",
+    description:
+      "基础观察在本地运行；仅在单独授权后，向百炼发送低频压缩帧。应用不保存原始画面，不申请麦克风。",
   },
   {
     icon: CircleDotDashed,
@@ -132,15 +133,14 @@ export default function Home() {
               variant="outline"
               className="mb-6 border-indigo-200 bg-white/70 px-3 py-1.5 text-indigo-800"
             >
-              <Sparkles className="size-3.5" /> StudyTrace v0.2 · 可运行产品
+              <Sparkles className="size-3.5" /> StudyTrace · 学习执行工具
             </Badge>
             <h1 className="max-w-4xl text-5xl leading-[1.06] font-semibold tracking-[-0.04em] text-balance text-slate-950 sm:text-6xl lg:text-7xl">
               让每一次行动，留下可以调整的
               <span className="text-indigo-700">迹</span>。
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-pretty text-slate-600 sm:text-xl">
-              学迹 StudyTrace 不是普通待办或监考工具。它把任务设计、AI
-              拆解、多次执行、本地过程观察、单次复盘与长期规律连成一条自律执行闭环。
+              把“我想学”变成清楚的目的、可执行的步骤与可验证的完成标准。分次推进，用过程观察和学习复盘留下依据，再从学习报告中找到下一步。
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button size="lg" className="h-11 px-5" asChild>
@@ -185,8 +185,8 @@ export default function Home() {
               <div className="session-grid border-b bg-indigo-50/50 px-6 py-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-medium tracking-[0.14em] text-indigo-700 uppercase">
-                      In progress / 正在执行
+                    <p className="text-xs font-medium text-indigo-700">
+                      界面示意 · 本次学习
                     </p>
                     <h2 className="mt-1 font-semibold text-slate-950">
                       完成光合作用实验复盘
@@ -211,7 +211,7 @@ export default function Home() {
                   <div>
                     <p className="font-medium">当前状态：中性姿态</p>
                     <p className="mt-1 text-sm text-emerald-800">
-                      帧在浏览器本地处理，网络中没有视频上传。
+                      当前示例为本地模式。云端过程观察需要另外授权。
                     </p>
                   </div>
                 </div>
@@ -234,7 +234,6 @@ export default function Home() {
       <section className="content-auto border-y border-indigo-100/70 bg-white/70 px-5 py-20">
         <div className="mx-auto grid w-full max-w-7xl gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
           <div>
-            <p className="section-kicker">Problem / 问题背景</p>
             <h2 className="text-3xl font-semibold tracking-tight text-balance text-slate-950 sm:text-4xl">
               自律不只需要一张计划表，还需要看见自己怎样执行、下一次改什么。
             </h2>
@@ -272,7 +271,6 @@ export default function Home() {
 
       <section id="loop" className="content-auto px-5 py-24">
         <div className="mx-auto w-full max-w-7xl">
-          <p className="section-kicker">Closed loop / 自律执行闭环</p>
           <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <h2 className="max-w-3xl text-3xl font-semibold tracking-tight text-balance text-slate-950 sm:text-4xl">
               从一个目标开始，逐步形成自己的行动依据。
@@ -322,11 +320,8 @@ export default function Home() {
       >
         <div className="mx-auto grid w-full max-w-7xl gap-14 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
-            <p className="mb-3 text-xs font-semibold tracking-[0.18em] text-emerald-300 uppercase">
-              Architecture / 技术架构
-            </p>
             <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-              高频视觉帧留在 Worker，结构化事件才进入数据库。
+              高频检测留在本地，云端只解释约定相关的可见线索。
             </h2>
             <p className="mt-5 leading-7 text-indigo-200">
               静态公开首页与动态应用区分开；计算、存储和权限边界都有明确职责。
@@ -351,7 +346,7 @@ export default function Home() {
               [
                 ScanFace,
                 "MediaPipe Web Worker",
-                "Face Landmarker 按需加载，以约 4 FPS 推理，滚动窗口去抖。",
+                "Face Landmarker 与物体检测按需加载；只按有效推理累计覆盖，故障时停止判断。",
               ],
               [
                 Database,
@@ -361,7 +356,7 @@ export default function Home() {
               [
                 ShieldCheck,
                 "可审计交付链",
-                "TypeScript、Vitest、Playwright、GitHub Actions 与 Vercel Preview。",
+                "百炼分别承担引导规划、低频视觉理解和聚合报告；额度耗尽不自动切换付费模型。",
               ],
             ].map(([Icon, title, description]) => (
               <div
@@ -382,7 +377,6 @@ export default function Home() {
       <section id="privacy" className="content-auto px-5 py-24">
         <div className="mx-auto w-full max-w-7xl">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="section-kicker">Privacy / 隐私原则</p>
             <h2 className="text-3xl font-semibold tracking-tight text-balance text-slate-950 sm:text-4xl">
               从“不该收集什么”开始设计。
             </h2>
@@ -410,7 +404,9 @@ export default function Home() {
 
       <section className="content-auto border-y border-indigo-100 bg-white/70 px-5 py-20">
         <div className="mx-auto w-full max-w-7xl">
-          <p className="section-kicker">Roadmap / 版本里程碑</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
+            一步步完善学习执行闭环
+          </h2>
           <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
               [
@@ -429,9 +425,9 @@ export default function Home() {
                 true,
               ],
               [
-                "v0.3 · 下一步",
-                "探索数据导出、明确同意后的聚合 AI 报告，以及独立的全身运动识别实验。",
-                false,
+                "v0.3 · 引导、观察与解读",
+                "选择题澄清意图、版本化方案、观察约定、可选云端理解与 AI 学习报告。全身运动识别不在本版范围。",
+                true,
               ],
             ].map(([title, description, current]) => (
               <div
@@ -457,10 +453,11 @@ export default function Home() {
         <div className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] bg-indigo-700 px-6 py-12 text-center text-white shadow-2xl shadow-indigo-950/20 sm:px-12 sm:py-16">
           <BrainCircuit className="mx-auto size-9 text-emerald-300" />
           <h2 className="mx-auto mt-5 max-w-3xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-            从一个真实任务开始，留下第一条行动记录。
+            从一个学习目的开始，留下第一条行动记录。
           </h2>
           <p className="mx-auto mt-4 max-w-2xl leading-7 text-indigo-100">
-            无需注册即可设计任务、分次执行并选择是否复盘。记录积累到最低样本量后，再查看只属于你的事实型规律。
+            无需注册即可制定学习计划、分次推进并选择是否复盘。摄像头、云端处理与
+            AI 报告各自可选，关闭它们也不影响基础功能。
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Button size="lg" variant="secondary" asChild>

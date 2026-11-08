@@ -14,6 +14,17 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_reports: {
+        Row: {
+          id: string; user_id: string; period_days: number; source: string; status: string
+          input_hash: string; input_snapshot: Json; content: Json | null
+          model_id: string | null; token_usage: Json | null; error_code: string | null
+          created_at: string; generated_at: string | null; read_at: string | null; updated_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       behavior_events: {
         Row: {
           corrected_direction: string | null
@@ -621,6 +632,12 @@ export type Database = {
       set_my_consent: { Args: { p_feature: string; p_granted: boolean; p_version: string }; Returns: Json }
       prepare_cloud_observation: { Args: { p_session_id: string; p_window_id: string; p_started_at: string; p_ended_at: string }; Returns: Json }
       finish_cloud_observation: { Args: { p_window_id: string; p_result: Json; p_model: string }; Returns: Json }
+      claim_learning_report: { Args: { p_user_id: string; p_days: number; p_source?: string }; Returns: Json }
+      finish_learning_report: { Args: { p_report_id: string; p_lease_token: string; p_content: Json; p_model_id: string; p_token_usage: Json; p_error_code?: string }; Returns: boolean }
+      list_due_learning_report_users: { Args: {p_limit?: number;p_exclude?: string[]}; Returns: Json }
+      mark_my_ai_report_read: { Args: {p_report_id: string}; Returns: undefined }
+      get_my_ai_report_schedule: { Args: Record<PropertyKey, never>; Returns: Json }
+      export_my_learning_records: { Args: {p_table: string;p_expected_user_id: string;p_offset?: number}; Returns: Json }
       cancel_study_session: {
         Args: { p_accumulated_seconds: number; p_session_id: string }
         Returns: {

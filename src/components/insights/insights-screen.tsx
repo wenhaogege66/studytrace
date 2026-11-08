@@ -15,6 +15,9 @@ import {
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { AiReportPanel } from "@/components/reports/ai-report-panel"
+import { ReportExport } from "@/components/reports/report-export"
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -199,8 +202,12 @@ function TimeEvidence({ report }: { report: InsightsReport }) {
   )
 }
 
-export function InsightsScreen() {
-  const [days, setDays] = useState<InsightWindow>(30)
+export function InsightsScreen({
+  initialDays = 30,
+}: {
+  initialDays?: InsightWindow
+}) {
+  const [days, setDays] = useState<InsightWindow>(initialDays)
   const query = useInsights(days)
   const preferences = useInsightsPreferencesMutation()
   const browserTimezone = useMemo(
@@ -246,7 +253,7 @@ export function InsightsScreen() {
       <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-            你实际是怎么投入时间的
+            学习报告
           </h1>
           <p className="mt-3 max-w-2xl leading-7 text-slate-600">
             只呈现可追溯的个人记录。样本不足时显示收集进度，不把画面信号解释成“走神”。
@@ -269,6 +276,8 @@ export function InsightsScreen() {
           ))}
         </div>
       </header>
+
+      <ReportExport />
 
       {!report.data_coverage.period_complete ||
       !report.data_coverage.recommendation_evidence_complete ? (
@@ -343,6 +352,7 @@ export function InsightsScreen() {
               }
             />
           </section>
+          <AiReportPanel days={days} />
           {report.segments.eligible_count === 0 ? (
             <Alert className="border-indigo-100 bg-white/80">
               <Clock3 />
