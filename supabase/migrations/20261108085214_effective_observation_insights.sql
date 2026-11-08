@@ -37,8 +37,8 @@ begin
     select least(actual_seconds,coalesce(floor(sum(effective_milliseconds::numeric*clipped_share)/1000),0)::bigint)
     into observed_seconds from valid_runs;$new$);
   if updated=definition then raise exception 'Observation aggregation body anchor missing'; end if;
-  updated:=replace(updated,$old$event.source = 'vision'$old$,$new$event.source in ('vision','cloud_vision')$new$);
-  updated:=replace(updated,$old$signal.source = 'vision'$old$,$new$signal.source in ('vision','cloud_vision')$new$);
+  -- Local event rates keep their local successful-inference denominator.
+  -- Cloud sampled windows are reported separately, never as continuous video.
   execute updated;
 end;
 $migration$;

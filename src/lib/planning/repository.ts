@@ -9,7 +9,7 @@ import {
 import { manualLearningPlan } from "@/lib/planning/manual"
 import { getSupabase } from "@/lib/supabase/client"
 import { parseObservationAgreement } from "@/lib/vision/agreement"
-import type { Database, Json } from "@/types/database"
+import type { Database, Json } from "@/types/app-database"
 
 export function planFromTask(task: Task, snapshot?: unknown): LearningPlan {
   const adopted = learningPlanSchema.safeParse(snapshot)

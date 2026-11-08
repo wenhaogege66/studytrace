@@ -54,6 +54,7 @@ create table private.ai_report_budget (
 alter table private.ai_report_jobs enable row level security;
 alter table private.ai_report_schedule enable row level security;
 alter table private.ai_report_budget enable row level security;
+create index ai_report_budget_user_idx on private.ai_report_budget(user_id) where user_id is not null;
 revoke all on private.ai_report_jobs, private.ai_report_schedule, private.ai_report_budget
   from public, anon, authenticated;
 
@@ -383,12 +384,12 @@ begin
   end if;
   if p_table not in ('tasks','study_sessions','behavior_events','reminder_events','reviews',
     'user_settings','session_segments','observation_runs','task_lifecycle_events','task_step_events',
-    'task_plan_revisions','user_consents','ai_reports') or p_offset<0 or p_offset>10000 or p_offset%500<>0 then
+    'task_plan_revisions','user_consents','ai_reports','cloud_observation_facts') or p_offset<0 or p_offset>10000 or p_offset%500<>0 then
     raise exception 'Invalid export page' using errcode='22023';
   end if;
   sort_key:=case when p_table='user_settings' then 'user_id' when p_table='user_consents' then 'feature' else 'id' end;
   execute format('select coalesce(jsonb_agg(to_jsonb(selected)),''[]''::jsonb) from
-    (select * from public.%I where user_id=$1 order by %I limit 500 offset $2) selected',p_table,sort_key)
+    (select * from %I.%I where user_id=$1 order by %I limit 500 offset $2) selected',case when p_table='cloud_observation_facts' then 'private' else 'public' end,p_table,sort_key)
     into result using auth.uid(),p_offset;
   return result;
 end;

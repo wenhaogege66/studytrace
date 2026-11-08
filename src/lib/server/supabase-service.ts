@@ -2,7 +2,7 @@ import "server-only"
 
 import { createClient } from "@supabase/supabase-js"
 
-import type { Database } from "@/types/database"
+import type { Database } from "@/types/app-database"
 
 export function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

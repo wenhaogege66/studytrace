@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 
-import type { Database } from "@/types/database"
+import type { Database } from "@/types/app-database"
 
 export class ApiError extends Error {
   constructor(

@@ -424,10 +424,10 @@ export function InsightsScreen({
                     id="observation-heading"
                     className="font-semibold text-slate-950"
                   >
-                    可选视觉观察的覆盖情况
+                    过程观察的覆盖情况
                   </h2>
                   <p className="mt-1 text-sm leading-6 text-slate-500">
-                    仅汇总开启摄像头的时间和经你确认的结构化事件；不保存画面或关键点。
+                    本地覆盖只计算成功、连续的推理样本；云端低频采样单独呈现，不视为看懂全程视频。
                   </p>
                 </div>
               </div>
@@ -438,7 +438,7 @@ export function InsightsScreen({
                       report.observation.observed_seconds,
                     )}
                   </p>
-                  <p className="text-xs text-slate-500">观察时长</p>
+                  <p className="text-xs text-slate-500">本地有效观察</p>
                 </div>
                 <div>
                   <p className="text-xl font-semibold tabular-nums">
@@ -450,7 +450,7 @@ export function InsightsScreen({
                   <p className="text-xl font-semibold tabular-nums">
                     {report.observation.confirmed_event_count}
                   </p>
-                  <p className="text-xs text-slate-500">确认事件</p>
+                  <p className="text-xs text-slate-500">本地确认事件</p>
                 </div>
                 <div>
                   <p className="text-xl font-semibold tabular-nums">
@@ -462,6 +462,24 @@ export function InsightsScreen({
                 </div>
               </div>
             </div>
+            {report.observation.cloud ? (
+              <div className="mt-5 border-t border-indigo-50 pt-4 text-sm leading-7 text-slate-600">
+                <h3 className="font-medium text-slate-900">云端采样观察</h3>
+                <p>
+                  共分析 {report.observation.cloud.window_count}{" "}
+                  个窗口，包含有效采样{" "}
+                  {formatEvidenceDuration(
+                    report.observation.cloud.sampled_seconds,
+                  )}
+                  ；{report.observation.cloud.unknown_window_count}{" "}
+                  个窗口无法判断。经你确认的云端线索{" "}
+                  {report.observation.cloud.confirmed_event_count} 次。
+                </p>
+                <p className="text-xs text-slate-500">
+                  每个窗口约六秒，窗口之间未持续观察。不用本地覆盖时长计算云端事件率。
+                </p>
+              </div>
+            ) : null}
             <div className="mt-5 border-t border-indigo-50 pt-5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="text-sm font-medium text-slate-800">

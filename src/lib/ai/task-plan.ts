@@ -73,9 +73,13 @@ export async function generateTaskPlan(
 ): Promise<TaskPlanSuggestion> {
   const apiKey = process.env.QWEN_API_KEY
   const baseURL = process.env.QWEN_BASE_URL
-  const modelId = process.env.QWEN_MODEL ?? "qwen3.7-flash-2026-07-15"
+  const modelId =
+    process.env.QWEN_PLANNING_MODEL ??
+    process.env.QWEN_MODEL ??
+    "qwen3.7-flash-2026-07-15"
 
-  if (!apiKey || !baseURL) throw new Error("QWEN_NOT_CONFIGURED")
+  if (process.env.QWEN_PLANNING_ENABLED !== "true" || !apiKey || !baseURL)
+    throw new Error("QWEN_NOT_CONFIGURED")
   const trustedBaseURL = validateQwenBaseURL(baseURL)
 
   const qwen = createOpenAICompatible({

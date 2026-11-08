@@ -42,7 +42,7 @@ describe("valid observation coverage buffer", () => {
     const buffer = createCoverageBuffer()
     buffer.add(250)
     const first = buffer.flush(send)
-    await vi.waitFor(()=>expect(send).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
     buffer.add(500)
     const second = buffer.flush(send)
     expect(send).toHaveBeenCalledTimes(1)

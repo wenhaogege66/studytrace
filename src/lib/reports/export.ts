@@ -48,6 +48,7 @@ export async function getMyDataExport(userId: string) {
     "task_plan_revisions",
     "user_consents",
     "ai_reports",
+    "cloud_observation_facts",
   ] as const
   const result: Record<string, Record<string, unknown>[]> = {}
   for (const table of tables) {

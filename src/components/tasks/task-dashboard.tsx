@@ -1144,7 +1144,7 @@ export function TaskDashboard() {
             今天，先完成哪一件具体的事？
           </h1>
           <p className="mt-3 text-slate-600">
-            把“大学习计划”拆成下一步，计时才真正有方向。
+            把一个学习目的，变成眼前可执行的下一步。
           </p>
         </div>
         <div className="flex gap-2">
@@ -1348,7 +1348,7 @@ export function TaskDashboard() {
                         changeTaskStatus(
                           task.id,
                           "planned",
-                          "学习计划已恢复到学习计划",
+                          "已恢复为待完成计划",
                         )
                       }
                       onArchive={() =>

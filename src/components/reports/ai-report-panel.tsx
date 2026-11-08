@@ -148,7 +148,7 @@ function AiReportPanelContent({ days }: { days: 7 | 30 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const consent = useQuery({
     queryKey: ["consents", userId],
-    queryFn: getMyConsents,
+    queryFn: () => getMyConsents(userId),
     enabled: Boolean(userId),
   })
   const schedule = useQuery({

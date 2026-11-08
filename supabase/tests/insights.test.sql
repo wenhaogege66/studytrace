@@ -8,6 +8,15 @@
 
 begin;
 
+-- The public OTP/merge entry points stay retired. Exercise historical merge
+-- integrity only inside this rolled-back local test transaction.
+do $$ begin
+  if has_function_privilege('authenticated','public.prepare_account_merge(text,text)','execute')
+    or has_function_privilege('authenticated','public.consume_account_merge(text)','execute') then
+    raise exception 'retired merge API is still exposed'; end if;
+end; $$;
+grant execute on function public.prepare_account_merge(text,text),public.consume_account_merge(text) to authenticated;
+
 do $$
 declare
   fact_table text;
@@ -1140,9 +1149,11 @@ begin
       evening, night;
   end if;
 
-  if (report_30->'observation'->>'observed_seconds')::bigint <> 600
+  -- Legacy wall-clock fixtures have no proven inference accumulator. They
+  -- intentionally contribute zero coverage after the v0.3 cutover.
+  if (report_30->'observation'->>'observed_seconds')::bigint <> 0
     or (report_30->'observation'->>'confirmed_event_count')::integer <> 10
-    or (report_30->'observation'->>'confirmed_events_per_hour')::numeric <> 60
+    or (report_30->'observation'->>'confirmed_events_per_hour')::numeric <> 0
     or (report_30->'observation'->'reminder_responses'->>'normal_activity')::integer <> 2
     or (report_30->'observation'->'reminder_responses'->>'none')::integer <> 0
   then
@@ -1664,7 +1675,7 @@ begin
   select report into premerge_report from premerge_target_insights;
   if (merged_report->'overview'->>'actual_seconds')::bigint <> 26040
     or (merged_report->'segments'->>'eligible_count')::integer <> 23
-    or (merged_report->'observation'->>'observed_seconds')::bigint <> 900
+    or (merged_report->'observation'->>'observed_seconds')::bigint <> 0
   then
     raise exception 'merged insight facts were lost or double-counted: %', merged_report;
   end if;

@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/api"
 import { observationAgreementSchema } from "@/lib/vision/agreement"
 import { cloudRequestSchema } from "@/lib/vision/cloud-contract"
-import type { Database } from "@/types/database"
+import type { Database } from "@/types/app-database"
 
 export const maxDuration = 30
 export async function POST(request: Request) {

@@ -181,11 +181,11 @@ export function SettingsScreen() {
 
         <TabsContent value="privacy" className="mt-5 space-y-5">
           <ConsentSettings
-            key={user?.id}
+            key={`consents:${user?.id}`}
             userId={user?.id}
             isAnonymous={user?.is_anonymous !== false}
           />
-          <ReportSchedule key={user?.id} />
+          <ReportSchedule key={`schedule:${user?.id}`} />
           <Card className="border-indigo-100 bg-white/90">
             <CardHeader>
               <CardTitle>数据用途清单</CardTitle>

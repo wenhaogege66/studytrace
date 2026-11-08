@@ -125,6 +125,13 @@ export function buildReportEvidence(
       samples: snapshot.estimate_summary.completed_plan_count,
     },
   ]
+  if (f.observation.cloud)
+    evidence.push({
+      id: "cloud_observation",
+      label: "云端采样观察",
+      value: `分析 ${f.observation.cloud.window_count} 个窗口，无法判断 ${f.observation.cloud.unknown_window_count} 个窗口；有效采样 ${f.observation.cloud.sampled_seconds} 秒；用户确认 ${f.observation.cloud.confirmed_event_count} 次。窗口之间未被持续观察。`,
+      samples: f.observation.cloud.window_count,
+    })
   for (const [index, plan] of snapshot.adopted_plans.entries())
     evidence.push({
       id: `plan_${index + 1}`,
