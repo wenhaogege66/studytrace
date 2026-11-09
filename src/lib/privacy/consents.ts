@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { createClient } from "@supabase/supabase-js"
 import { getSupabase } from "@/lib/supabase/client"
-import type { Database } from "@/types/database"
+import type { Database } from "@/types/app-database"
 
 export const CONSENT_VERSION = "2026-11-08.v1"
 export const consentFeatures = [
@@ -52,6 +52,7 @@ async function captureIdentity(expectedUserId?: string) {
   return {
     userId: session.user.id,
     client: createClient<Database>(url, key, {
+      accessToken: async () => session.access_token,
       auth: {
         persistSession: false,
         storageKey: `studytrace-consents-${crypto.randomUUID()}`,

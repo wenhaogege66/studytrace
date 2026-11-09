@@ -7,13 +7,65 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
   public: {
     Tables: {
+      ai_reports: {
+        Row: {
+          content: Json | null
+          created_at: string
+          cycle_due_at: string | null
+          error_code: string | null
+          generated_at: string | null
+          id: string
+          input_hash: string
+          input_snapshot: Json
+          model_id: string | null
+          period_days: number
+          read_at: string | null
+          source: string
+          status: string
+          token_usage: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: Json | null
+          created_at?: string
+          cycle_due_at?: string | null
+          error_code?: string | null
+          generated_at?: string | null
+          id?: string
+          input_hash: string
+          input_snapshot: Json
+          model_id?: string | null
+          period_days: number
+          read_at?: string | null
+          source: string
+          status?: string
+          token_usage?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: Json | null
+          created_at?: string
+          cycle_due_at?: string | null
+          error_code?: string | null
+          generated_at?: string | null
+          id?: string
+          input_hash?: string
+          input_snapshot?: Json
+          model_id?: string | null
+          period_days?: number
+          read_at?: string | null
+          source?: string
+          status?: string
+          token_usage?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       behavior_events: {
         Row: {
           corrected_direction: string | null
@@ -24,6 +76,7 @@ export type Database = {
           ended_at: string | null
           event_type: string
           id: string
+          observation_metadata: Json
           review_status: string
           session_id: string
           source: string
@@ -40,6 +93,7 @@ export type Database = {
           ended_at?: string | null
           event_type: string
           id?: string
+          observation_metadata?: Json
           review_status?: string
           session_id: string
           source: string
@@ -56,6 +110,7 @@ export type Database = {
           ended_at?: string | null
           event_type?: string
           id?: string
+          observation_metadata?: Json
           review_status?: string
           session_id?: string
           source?: string
@@ -77,8 +132,8 @@ export type Database = {
         Row: {
           camera_version: number
           created_at: string
-          effective_milliseconds: number
           detector_version: string
+          effective_milliseconds: number
           ended_at: string | null
           experiment_mode: boolean
           id: string
@@ -94,8 +149,8 @@ export type Database = {
         Insert: {
           camera_version?: number
           created_at?: string
-          effective_milliseconds?: number
           detector_version: string
+          effective_milliseconds?: number
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
@@ -111,8 +166,8 @@ export type Database = {
         Update: {
           camera_version?: number
           created_at?: string
-          effective_milliseconds?: number
           detector_version?: string
+          effective_milliseconds?: number
           ended_at?: string | null
           experiment_mode?: boolean
           id?: string
@@ -267,75 +322,82 @@ export type Database = {
       }
       study_sessions: {
         Row: {
-          plan_revision_id: string | null
-          target_minutes: number
-          energy_before: string | null
-          observation_agreement: Json
           accumulated_seconds: number
           camera_enabled: boolean
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
-          task_outcome: string | null
+          target_minutes: number
           task_id: string
+          task_outcome: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
-          plan_revision_id?: string | null
-          target_minutes?: number
-          energy_before?: string | null
-          observation_agreement?: Json
           accumulated_seconds?: number
           camera_enabled?: boolean
           camera_version?: number
           created_at?: string
           ended_at?: string | null
+          energy_before?: string | null
           experiment_mode?: boolean
           id?: string
+          observation_agreement?: Json
           observation_profile?: string
+          plan_revision_id?: string | null
           reminders_enabled?: boolean
           resumed_at?: string | null
           started_at?: string
           state_version?: number
           status?: string
-          task_outcome?: string | null
+          target_minutes?: number
           task_id: string
+          task_outcome?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
-          plan_revision_id?: string | null
-          target_minutes?: number
-          energy_before?: string | null
-          observation_agreement?: Json
           accumulated_seconds?: number
           camera_enabled?: boolean
           camera_version?: number
           created_at?: string
           ended_at?: string | null
+          energy_before?: string | null
           experiment_mode?: boolean
           id?: string
+          observation_agreement?: Json
           observation_profile?: string
+          plan_revision_id?: string | null
           reminders_enabled?: boolean
           resumed_at?: string | null
           started_at?: string
           state_version?: number
           status?: string
-          task_outcome?: string | null
+          target_minutes?: number
           task_id?: string
+          task_outcome?: string | null
           updated_at?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sessions_plan_revision_owner_fk"
+            columns: ["plan_revision_id", "task_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "task_plan_revisions"
+            referencedColumns: ["id", "task_id", "user_id"]
+          },
           {
             foreignKeyName: "study_sessions_task_id_fkey"
             columns: ["task_id"]
@@ -382,6 +444,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "task_lifecycle_events_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_plan_revisions: {
+        Row: {
+          changes: Json
+          comment: string
+          created_at: string
+          id: string
+          kind: string
+          ordinal: number
+          request_hash: string | null
+          request_id: string | null
+          snapshot: Json
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          changes?: Json
+          comment?: string
+          created_at?: string
+          id?: string
+          kind: string
+          ordinal: number
+          request_hash?: string | null
+          request_id?: string | null
+          snapshot: Json
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          changes?: Json
+          comment?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          ordinal?: number
+          request_hash?: string | null
+          request_id?: string | null
+          snapshot?: Json
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_plan_revisions_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
@@ -441,101 +553,109 @@ export type Database = {
       }
       tasks: {
         Row: {
-          intent_text: string
-          planning_context: Json
-          learning_purpose: string
-          completion_criterion: string
-          method_summary: string
-          suggested_session_minutes: number
-          due_at: string | null
-          current_plan_revision_id: string | null
-          observation_agreement: Json
           completed_at: string | null
+          completion_criterion: string
           created_at: string
+          current_plan_revision_id: string | null
+          due_at: string | null
           estimated_minutes: number
           id: string
+          intent_text: string
+          learning_purpose: string
+          method_summary: string
+          observation_agreement: Json
           observation_profile: string
+          planning_context: Json
           priority: string
           status: string
           steps: Json
+          suggested_session_minutes: number
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
-          intent_text?: string
-          planning_context?: Json
-          learning_purpose?: string
-          completion_criterion?: string
-          method_summary?: string
-          suggested_session_minutes?: number
-          due_at?: string | null
-          current_plan_revision_id?: string | null
-          observation_agreement?: Json
           completed_at?: string | null
+          completion_criterion?: string
           created_at?: string
+          current_plan_revision_id?: string | null
+          due_at?: string | null
           estimated_minutes: number
           id?: string
+          intent_text?: string
+          learning_purpose?: string
+          method_summary?: string
+          observation_agreement?: Json
           observation_profile?: string
+          planning_context?: Json
           priority?: string
           status?: string
           steps?: Json
+          suggested_session_minutes?: number
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
-          intent_text?: string
-          planning_context?: Json
-          learning_purpose?: string
-          completion_criterion?: string
-          method_summary?: string
-          suggested_session_minutes?: number
-          due_at?: string | null
-          current_plan_revision_id?: string | null
-          observation_agreement?: Json
           completed_at?: string | null
+          completion_criterion?: string
           created_at?: string
+          current_plan_revision_id?: string | null
+          due_at?: string | null
           estimated_minutes?: number
           id?: string
+          intent_text?: string
+          learning_purpose?: string
+          method_summary?: string
+          observation_agreement?: Json
           observation_profile?: string
+          planning_context?: Json
           priority?: string
           status?: string
           steps?: Json
+          suggested_session_minutes?: number
           title?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tasks_adopted_revision_owner_fk"
+            columns: ["current_plan_revision_id", "id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "task_plan_revisions"
+            referencedColumns: ["id", "task_id", "user_id"]
+          },
+        ]
       }
-      task_plan_revisions: {
+      user_consents: {
         Row: {
-          id: string
+          feature: string
+          granted: boolean
+          granted_at: string | null
+          revoked_at: string | null
+          updated_at: string
           user_id: string
-          task_id: string
-          ordinal: number
-          kind: string
-          snapshot: Json
-          changes: Json
-          comment: string
-          request_id: string | null
-          request_hash: string | null
-          created_at: string
+          version: string
         }
         Insert: {
-          id?: string
+          feature: string
+          granted?: boolean
+          granted_at?: string | null
+          revoked_at?: string | null
+          updated_at?: string
           user_id: string
-          task_id: string
-          ordinal: number
-          kind: string
-          snapshot: Json
-          changes?: Json
-          comment?: string
-          request_id?: string | null
-          request_hash?: string | null
-          created_at?: string
+          version: string
         }
-        Update: { snapshot?: Json }
+        Update: {
+          feature?: string
+          granted?: boolean
+          granted_at?: string | null
+          revoked_at?: string | null
+          updated_at?: string
+          user_id?: string
+          version?: string
+        }
         Relationships: []
       }
       user_settings: {
@@ -612,28 +732,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      record_observation_coverage: {
-        Args: {
-          p_camera_version: number
-          p_expected_state_version: number
-          p_sequence: number
-          p_session_id: string
-          p_valid_milliseconds: number
-        }
-        Returns: number
-      }
-      save_learning_plan: {
-        Args: { p_request_id: string; p_task_id: string | null; p_expected_revision_id: string | null; p_plan: Json; p_revisions: Json }
-        Returns: Database["public"]["Tables"]["tasks"]["Row"]
-      }
-      update_session_learning_context: {
-        Args: { p_session_id: string; p_target_minutes: number; p_energy_before: string | null }
-        Returns: Database["public"]["Tables"]["study_sessions"]["Row"]
-      }
-      get_my_consents: { Args: never; Returns: Json }
-      set_my_consent: { Args: { p_feature: string; p_granted: boolean; p_version: string }; Returns: Json }
-      prepare_cloud_observation: { Args: { p_session_id: string; p_window_id: string; p_started_at: string; p_ended_at: string }; Returns: Json }
-      finish_cloud_observation: { Args: { p_window_id: string; p_result: Json; p_model: string }; Returns: Json }
+      cancel_account_deletion: { Args: { p_token: string }; Returns: boolean }
+      cancel_account_merge: { Args: { p_token: string }; Returns: boolean }
       cancel_study_session: {
         Args: { p_accumulated_seconds: number; p_session_id: string }
         Returns: {
@@ -642,14 +742,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -658,28 +762,6 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "study_sessions"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
-      confirm_task_completion: {
-        Args: { p_accumulated_seconds?: number; p_task_id: string }
-        Returns: {
-          completed_at: string | null
-          created_at: string
-          estimated_minutes: number
-          id: string
-          observation_profile: string
-          priority: string
-          status: string
-          steps: Json
-          title: string
-          updated_at: string
-          user_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "tasks"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -697,14 +779,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -717,25 +803,65 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      consume_account_merge: {
-        Args: { p_token: string }
+      claim_learning_report: {
+        Args: { p_days: number; p_source?: string; p_user_id: string }
         Returns: Json
       }
-      cancel_account_deletion: {
-        Args: { p_token: string }
-        Returns: boolean
+      confirm_task_completion: {
+        Args: { p_accumulated_seconds?: number; p_task_id: string }
+        Returns: {
+          completed_at: string | null
+          completion_criterion: string
+          created_at: string
+          current_plan_revision_id: string | null
+          due_at: string | null
+          estimated_minutes: number
+          id: string
+          intent_text: string
+          learning_purpose: string
+          method_summary: string
+          observation_agreement: Json
+          observation_profile: string
+          planning_context: Json
+          priority: string
+          status: string
+          steps: Json
+          suggested_session_minutes: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
-      cancel_account_merge: {
-        Args: { p_token: string }
-        Returns: boolean
-      }
+      consume_account_merge: { Args: { p_token: string }; Returns: Json }
       consume_ai_generation_quota: { Args: never; Returns: boolean }
-      delete_my_account: {
-        Args: { p_token: string }
-        Returns: undefined
-      }
-      delete_my_password_account: { Args: never; Returns: undefined }
+      delete_my_account: { Args: { p_token: string }; Returns: undefined }
       delete_my_data: { Args: never; Returns: undefined }
+      delete_my_password_account: { Args: never; Returns: undefined }
+      export_my_learning_records: {
+        Args: { p_expected_user_id: string; p_offset?: number; p_table: string }
+        Returns: Json
+      }
+      finish_cloud_observation: {
+        Args: { p_model: string; p_result: Json; p_window_id: string }
+        Returns: Json
+      }
+      finish_learning_report: {
+        Args: {
+          p_content: Json
+          p_error_code?: string
+          p_lease_token: string
+          p_model_id: string
+          p_report_id: string
+          p_token_usage: Json
+        }
+        Returns: boolean
+      }
       finish_study_session: {
         Args: {
           p_accumulated_seconds: number
@@ -748,14 +874,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -769,6 +899,8 @@ export type Database = {
         }
       }
       get_my_account_transfer_summary: { Args: never; Returns: Json }
+      get_my_ai_report_schedule: { Args: never; Returns: Json }
+      get_my_consents: { Args: never; Returns: Json }
       get_my_insights: { Args: { p_days?: number }; Returns: Json }
       heartbeat_observation_run: {
         Args: {
@@ -776,7 +908,15 @@ export type Database = {
           p_expected_state_version: number
           p_session_id: string
         }
-        Returns: string | null
+        Returns: string
+      }
+      list_due_learning_report_users: {
+        Args: { p_exclude?: string[]; p_limit?: number }
+        Returns: Json
+      }
+      mark_my_ai_report_read: {
+        Args: { p_report_id: string }
+        Returns: undefined
       }
       pause_study_session: {
         Args: {
@@ -790,14 +930,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -818,14 +962,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -838,33 +986,52 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      prepare_account_deletion: {
-        Args: { p_token: string }
-        Returns: string
-      }
+      prepare_account_deletion: { Args: { p_token: string }; Returns: string }
       prepare_account_merge: {
         Args: { p_target_email: string; p_token: string }
         Returns: string
       }
-      refresh_account_deletion: {
-        Args: { p_token: string }
-        Returns: string
+      prepare_cloud_observation: {
+        Args: {
+          p_ended_at: string
+          p_session_id: string
+          p_started_at: string
+          p_window_id: string
+        }
+        Returns: Json
       }
-      refresh_account_merge: {
-        Args: { p_token: string }
-        Returns: string
+      record_observation_coverage: {
+        Args: {
+          p_camera_version: number
+          p_expected_state_version: number
+          p_sequence: number
+          p_session_id: string
+          p_valid_milliseconds: number
+        }
+        Returns: number
       }
+      refresh_account_deletion: { Args: { p_token: string }; Returns: string }
+      refresh_account_merge: { Args: { p_token: string }; Returns: string }
       reopen_completed_task: {
         Args: { p_task_id: string }
         Returns: {
           completed_at: string | null
+          completion_criterion: string
           created_at: string
+          current_plan_revision_id: string | null
+          due_at: string | null
           estimated_minutes: number
           id: string
+          intent_text: string
+          learning_purpose: string
+          method_summary: string
+          observation_agreement: Json
           observation_profile: string
+          planning_context: Json
           priority: string
           status: string
           steps: Json
+          suggested_session_minutes: number
           title: string
           updated_at: string
           user_id: string
@@ -903,14 +1070,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -922,6 +1093,47 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      save_learning_plan: {
+        Args: {
+          p_expected_revision_id: string
+          p_plan: Json
+          p_request_id: string
+          p_revisions: Json
+          p_task_id: string
+        }
+        Returns: {
+          completed_at: string | null
+          completion_criterion: string
+          created_at: string
+          current_plan_revision_id: string | null
+          due_at: string | null
+          estimated_minutes: number
+          id: string
+          intent_text: string
+          learning_purpose: string
+          method_summary: string
+          observation_agreement: Json
+          observation_profile: string
+          planning_context: Json
+          priority: string
+          status: string
+          steps: Json
+          suggested_session_minutes: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tasks"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      set_my_consent: {
+        Args: { p_feature: string; p_granted: boolean; p_version: string }
+        Returns: Json
       }
       set_study_session_camera: {
         Args: {
@@ -936,14 +1148,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -957,20 +1173,25 @@ export type Database = {
         }
       }
       set_task_step_completed: {
-        Args: {
-          p_completed: boolean
-          p_step_id: string
-          p_task_id: string
-        }
+        Args: { p_completed: boolean; p_step_id: string; p_task_id: string }
         Returns: {
           completed_at: string | null
+          completion_criterion: string
           created_at: string
+          current_plan_revision_id: string | null
+          due_at: string | null
           estimated_minutes: number
           id: string
+          intent_text: string
+          learning_purpose: string
+          method_summary: string
+          observation_agreement: Json
           observation_profile: string
+          planning_context: Json
           priority: string
           status: string
           steps: Json
+          suggested_session_minutes: number
           title: string
           updated_at: string
           user_id: string
@@ -994,14 +1215,18 @@ export type Database = {
           camera_version: number
           created_at: string
           ended_at: string | null
+          energy_before: string | null
           experiment_mode: boolean
           id: string
+          observation_agreement: Json
           observation_profile: string
+          plan_revision_id: string | null
           reminders_enabled: boolean
           resumed_at: string | null
           started_at: string
           state_version: number
           status: string
+          target_minutes: number
           task_id: string
           task_outcome: string | null
           updated_at: string
@@ -1018,6 +1243,42 @@ export type Database = {
       update_my_insights_preferences: {
         Args: { p_enabled: boolean; p_timezone: string }
         Returns: Json
+      }
+      update_session_learning_context: {
+        Args: {
+          p_energy_before: string
+          p_session_id: string
+          p_target_minutes: number
+        }
+        Returns: {
+          accumulated_seconds: number
+          camera_enabled: boolean
+          camera_version: number
+          created_at: string
+          ended_at: string | null
+          energy_before: string | null
+          experiment_mode: boolean
+          id: string
+          observation_agreement: Json
+          observation_profile: string
+          plan_revision_id: string | null
+          reminders_enabled: boolean
+          resumed_at: string | null
+          started_at: string
+          state_version: number
+          status: string
+          target_minutes: number
+          task_id: string
+          task_outcome: string | null
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "study_sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
     }
     Enums: {

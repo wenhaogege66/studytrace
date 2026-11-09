@@ -329,8 +329,9 @@ export async function installMockSupabase(
   const reminders: Row[] = []
   const reviews: Row[] = []
   const planRevisions: Row[] = []
-  const planSaves = new Map<string, { payload: string; taskId: string }>()
+  const aiReports: Row[] = []
   const consents = new Map<string, Row>()
+  const planSaves = new Map<string, { payload: string; taskId: string }>()
   const coverageBatches: Row[] = []
 
   if (options.seedRunningStudySession && currentUser) {
@@ -776,6 +777,46 @@ export async function installMockSupabase(
       await fulfillJson(route, records)
       return
     }
+    if (url.pathname === "/rest/v1/rpc/get_my_ai_report_schedule") {
+      await fulfillJson(route, { enabled: false, next_due_at: null })
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/mark_my_ai_report_read") {
+      await fulfillJson(route, null)
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/export_my_learning_records") {
+      const actor = userForRequest(request)
+      const body = (request.postDataJSON() ?? {}) as Row
+      if (!actor || body.p_expected_user_id !== actor.id) {
+        await fulfillJson(
+          route,
+          { code: "42501", message: "Identity changed" },
+          403,
+        )
+        return
+      }
+      const exportTables: Record<string, Row[]> = {
+        tasks,
+        study_sessions: sessions,
+        behavior_events: behaviorEvents,
+        reminder_events: reminders,
+        reviews,
+        user_settings: settings,
+        task_plan_revisions: planRevisions,
+        ai_reports: aiReports,
+      }
+      const rows = (exportTables[String(body.p_table)] ?? []).filter(
+        (row) => row.user_id === actor.id,
+      )
+      const offset = Number(body.p_offset) || 0
+      await fulfillJson(route, rows.slice(offset, offset + 500))
+      return
+    }
+    if (url.pathname === "/rest/v1/rpc/consume_ai_generation_quota") {
+      await fulfillJson(route, true)
+      return
+    }
     if (
       url.pathname === "/rest/v1/rpc/record_observation_coverage" ||
       url.pathname === "/rest/v1/rpc/heartbeat_observation_run"
@@ -1009,6 +1050,13 @@ export async function installMockSupabase(
         updated_at: now(),
       })
       await fulfillJson(route, session)
+      return
+    }
+    if (
+      url.pathname === "/rest/v1/rpc/record_valid_observation_coverage" ||
+      url.pathname === "/rest/v1/rpc/confirm_observation_coverage"
+    ) {
+      await fulfillJson(route, null)
       return
     }
 
@@ -1295,6 +1343,8 @@ export async function installMockSupabase(
       reminders.length = 0
       reviews.length = 0
       settings.length = 0
+      planRevisions.length = 0
+      aiReports.length = 0
       await fulfillJson(route, null)
       return
     }
@@ -1413,7 +1463,7 @@ export async function installMockSupabase(
       const timestamp = now()
       const session: Row = {
         id: crypto.randomUUID(),
-        user_id: userId,
+        user_id: task.user_id,
         task_id: task.id,
         status: "running",
         accumulated_seconds: 0,
@@ -1424,7 +1474,12 @@ export async function installMockSupabase(
         reminders_enabled: body.p_reminders_enabled ?? true,
         experiment_mode: body.p_experiment_mode ?? false,
         observation_profile: task.observation_profile ?? "study_screen_v1",
-        observation_agreement: task.observation_agreement,
+        observation_agreement: task.observation_agreement ?? {
+          phone: "ignored",
+          tablet: "ignored",
+          absenceSeconds: 60,
+          screenDirection: false,
+        },
         plan_revision_id: task.current_plan_revision_id ?? null,
         target_minutes: task.suggested_session_minutes ?? 25,
         energy_before: null,
@@ -1805,6 +1860,12 @@ export async function installMockSupabase(
       reviews,
       user_settings: settings,
       task_plan_revisions: planRevisions,
+      ai_reports: aiReports,
+      session_segments: [],
+      observation_runs: [],
+      task_lifecycle_events: [],
+      task_step_events: [],
+      user_consents: [],
     }
     const rows = tables[table]
     if (!rows) {

@@ -59,6 +59,14 @@ export const insightsReportSchema = z.object({
   }),
   time_buckets: z.array(timeBucketSchema),
   observation: z.object({
+    cloud: z
+      .object({
+        window_count: nonnegativeNumber,
+        unknown_window_count: nonnegativeNumber,
+        sampled_seconds: nonnegativeNumber,
+        confirmed_event_count: nonnegativeNumber,
+      })
+      .optional(),
     observed_seconds: nonnegativeNumber,
     coverage_percent: nonnegativeNumber,
     confirmed_event_count: nonnegativeNumber,

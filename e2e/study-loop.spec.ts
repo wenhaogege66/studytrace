@@ -94,7 +94,7 @@ test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环",
   await page.getByRole("button", { name: "保存本次复盘" }).click()
   await expect(page.getByText("这次复盘已经保存")).toBeVisible()
 
-  await page.getByRole("link", { name: "回到任务台", exact: true }).click()
+  await page.getByRole("link", { name: "回到学习计划", exact: true }).click()
   await page.getByRole("button", { name: "已完成 1" }).click()
   await expect(page.getByText("完成一次科创问题定义")).toBeVisible()
   await expect(page.getByRole("button", { name: "开始学习" })).toHaveCount(0)
@@ -291,7 +291,10 @@ test("从全局导航离开会自动暂停，并锁定当前会话的观察方�
   await expect(page).toHaveURL(/\/app\/plans\/new\?task=/)
   await expect(page.getByLabel("学习计划名称")).toBeDisabled()
   await expect(page.getByText(/请先结束本次学习，再修改结构/)).toBeVisible()
-  await page.getByRole("link", { name: "学迹学习计划首页" }).click()
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "学习计划", exact: true })
+    .click()
 
   await page.getByRole("button", { name: "继续学习" }).first().click()
   await expect(page).toHaveURL(/\/app\/session\//, { timeout: 20_000 })

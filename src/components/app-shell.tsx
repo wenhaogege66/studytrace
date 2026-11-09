@@ -14,6 +14,7 @@ import { useRef, type ReactNode } from "react"
 import { toast } from "sonner"
 
 import { AccountStatusButton } from "@/components/auth/account-status-button"
+import { ReportNotice } from "@/components/reports/report-notice"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { usePauseSessionForNavigation } from "@/hooks/use-study-data"
@@ -146,6 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-24 sm:px-6 sm:py-8 sm:pb-10">
+        {!pathname.startsWith("/app/session/") ? <ReportNotice /> : null}
         {children}
       </main>
 

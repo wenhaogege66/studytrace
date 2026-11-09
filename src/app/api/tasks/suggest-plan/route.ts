@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { taskPlanRequestSchema } from "@/lib/ai/task-plan-contract"
 import { generateTaskPlan } from "@/lib/ai/task-plan"
-import type { Database } from "@/types/database"
+import type { Database } from "@/types/app-database"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"

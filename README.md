@@ -1,218 +1,99 @@
 # 学迹 StudyTrace
 
-学迹是一款隐私优先的自律执行 Web 产品，把「任务设计 → AI 拆解 → 多次执行 → 可选过程观察与提醒 → 单次复盘 → 长期规律 → 个性化建议」连成一个真实可操作的闭环。
+让学习目的变成可执行、可回看、可调整的行动。
 
-[在线体验](https://studytrace.vercel.app) · [产品首页](https://studytrace.vercel.app) · [公开仓库](https://github.com/wenhaogege66/studytrace)
+StudyTrace 是一个学习执行产品：表达意图 → 选择题澄清 → 制定学习计划 → 约定观察重点 → 多次学习 → 学习复盘 → 学习报告。公开首页不展示学生、导师或真实课程身份信息。
 
-> 默认仍可直接使用完整的临时体验。本地过程观察默认不上传画面，可选云端过程观察必须另行授权，应用不保存原始媒体。
+[线上产品](https://studytrace.vercel.app) · [公开仓库](https://github.com/wenhaogege66/studytrace)
 
-## 为什么做学迹
+> v0.3 为分批验收版本。代码实现、自动化测试、真实摄像头验收及线上发布是不同证据；未通过人工验收的视觉能力不宣称准确率。
 
-普通计时器通常只留下「做了多久」，但很少回答三件更有行动价值的事：开始前目标是否足够具体、过程中发生了哪些可解释事件、下一次准备调整什么。
+## 产品结构
 
-学迹不把视觉识别当作评价工具。它只把「未在画面」「头部方向明显变化」等最小结构化事件交给用户确认、改写或删除，不计算专注分，也不输出走神、ADHD、能力或医学判断。
+- 学习计划：意图澄清、目的选项、完成标准、推荐方法、3–6 个执行步骤；推荐方案可编辑，首次修改提供一次 AI 点评。
+- 多次学习：同一学习计划跨多次推进，暂停与结束本次学习分开；全部步骤完成后仍需确认完成计划，学习复盘可以跳过。
+- 过程观察：浏览器本地检测在画面、头向与可见物体；单独授权后可使用百炼低频图像序列理解。纸笔学习允许正常低头。
+- 学习报告：7／30 天事实统计、样本覆盖、规则建议；可选 AI 解读与正式账号每七天自动报告。
+- 账号：匿名体验与独立邮箱密码账号。关闭邮件确认，不发送邮件、没有邮件找回，不自动升级或合并匿名数据。邮箱未核验，不可用于证明邮箱归属。
+- 记录导出：本人 JSON／CSV 数据、AI 解读及可打印报告。
 
-## 当前能力（v0.2）
+统一命名见 [设计规范](DESIGN.md)；数据库沿用 tasks 与 study_sessions，不因文案变化重建模型。
 
-- 任务：创建、拆分步骤、优先级、预计时长、编辑和删除；可由千问生成三步可编辑初稿。
-- 会话：开始、暂停、恢复、刷新恢复计时、完成步骤和手动标记；一个大任务可由多段 session 推进，每段都可结束后复盘或跳过复盘。
-- 过程观察：任务可选“屏幕学习 / 纸笔学习 / 离开设备”观察方式；MediaPipe Face Landmarker 与物体检测在 Web Worker 中按需运行。不启用云端时，画面与关键点仅在浏览器本地处理；云端使用需单独授权，且只检查已经约定的可见设备使用线索。
-- 事件：滚动窗口去抖、低打扰提醒、来源标记、确认、修正与硬删除。
-- 复盘：预计/实际时长、事件时间线、完成情况、自我感受和下次调整。
-- 隐私：匿名会话、逐行权限隔离、全部数据清除、30 天匿名数据清理。
-- 同步：临时记录可绑定新邮箱，或在明确确认后与已有邮箱账号原子合并；退出前自动暂停运行会话。
-- 洞察：按 7 天或 30 天汇总投入片段、完成记录、复盘覆盖、观察覆盖和提醒反馈；样本不足时只显示收集进度。
-- 展示：技术实验模式可缩短阈值和注入明确标记的模拟事件。
+## 架构与权限
 
-桌面 Chrome / Edge 是完整体验目标。手机端支持首页、任务管理和手动复盘；摄像头视觉能力按浏览器兼容性尽力支持。
+前端使用 Next.js 16 App Router、React 19、TypeScript、Tailwind CSS 4、Radix/shadcn 与 TanStack Query。瞬时计时、视频帧与推理状态使用 ref／Worker，不把视频放进全局状态。
 
-## 技术架构
+后端尽量简单：
 
-```text
-Next.js 16 App Router
-├── 静态公开首页 /
-└── 动态应用 /app
-    ├── React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
-    ├── Qwen Flash ── 仅生成可编辑任务初稿与白名单观察建议
-    ├── TanStack Query ── Supabase Data API
-    ├── timer reducer/ref ── 刷新恢复
-    ├── Camera ── 4 FPS frames ── MediaPipe Web Worker
-    │                                 │
-    │                                 └── 仅结构化事件 ── Supabase Postgres
-    └── deterministic insights ── 仅本人聚合指标
-```
+1. Supabase Auth 管身份，Postgres 存数据，RLS 按 auth.uid() 隔离本人记录。
+2. 原子 RPC 管会话、确认完成、版本保存和受限数据导出，客户端不能直接绕过生命周期规则。
+3. Next.js 服务端路由调用千问，校验用户、授权、学习状态与额度。
+4. 每日一个 Vercel Cron 检查到期自动报告；数据库唯一键、锁和短时租约防重复，不另建队列服务。
+5. 浏览器只持 publishable key。Supabase Secret、千问 Key 与 Cron Secret 只在服务端环境变量。
 
-Supabase 中的核心业务表与派生事实表均启用 RLS。浏览器只使用 publishable key；`anon` 没有业务表权限，匿名身份建立后使用 `authenticated` 角色，并由 `auth.uid() = user_id` 隔离数据。派生事实表不向浏览器开放原始查询，只通过 `get_my_insights(7|30)` 返回本人汇总。
-公开匿名体验还设置了数据库硬上限：每个匿名身份最多保留 200 个任务、1,000 段会话、5,000 条观察事件、5,000 条提醒记录和 1,000 条复盘；超出后需先删除旧记录。任务步骤必须是 1～20 个结构化且 ID 唯一的条目。
+## 隐私与能力边界
 
-主要路由：
-
-- `/`：定位、问题、闭环、架构、隐私和里程碑。
-- `/app`：任务工作台。
-- `/app/session/[id]`：学习计时与可选视觉观察。
-- `/app/review/[id]`：单次复盘与事件修正。
-- `/app/insights`：7 天 / 30 天事实型长期洞察与样本收集进度。
-- `/app/settings`：数据用途、视觉/提醒阈值和数据清除。
-- `/auth`：临时身份升级、邮箱验证码恢复、安全合并、退出与账号删除。
-
-## 本地视觉边界
-
-观察规则是可测试的本地白名单，不是由 AI 即时生成：
-
-- 屏幕学习：可观察持续未在画面、明显转头或低头等客观线索。
-- 纸笔学习：低头是正常动作，因此禁用低头事件。
-- 离开设备：适用于跑步、户外等任务，不请求摄像头，仅使用步骤、计时和复盘。
-
-开启人脸观察时使用以下规则：
-
-- 约 3 秒中性姿态校准，约 4 FPS 抽帧。
-- 连续 5 秒无人脸，开始「未在画面」事件。
-- 相对基线偏航约 25°或低头约 20°并持续 3 秒，开始方向变化事件。
-- 连续恢复中性 1 秒，结束事件。
-- 事件持续 15 秒后才允许提醒；同类提醒冷却 10 分钟。
-
-数据库没有用于保存视频、图片、音频、人脸关键点、生物特征或原始帧的列。MediaPipe 模型与 WASM 放在 `public/mediapipe`，只在用户主动开启摄像头后加载。
-
-可选云端过程观察默认关闭。主动同意后，每二十秒最多发送一组四张压缩图像给阿里云百炼，覆盖最近约六秒；不持续上传完整视频，也不申请麦克风。关闭、暂停、后台、导航离开、身份变化或撤回授权后停止新采样和上传，迟到响应不产生提醒。本应用不保存图像或提供商原文；百炼[隐私说明](https://help.aliyun.com/zh/model-studio/privacy-notice)披露其会依法存储调用产生的数据，不能承诺第三方零留存。最小化额度/防滥用计数最多保留七天，不含学习内容或媒体，删除业务数据不返还额度。
-
-## 数据模型与安全
-
-- `tasks`：任务、步骤 JSON、优先级、预计时长、状态和用户确认的观察方式。
-- `study_sessions`：计时状态、累计时长、摄像头与提醒状态，并快照开始当时的观察方式。
-- `behavior_events`：类型、方向、来源、起止时间和用户修正。
-- `reminder_events`：提醒展示与响应。
-- `reviews`：完成状态、自评、未完成原因和下次调整。
-- `user_settings`：授权版本、开关、阈值、IANA 时区和洞察设置。
-- `session_segments`：每次开始、恢复、暂停和结束形成的连续投入段。
-- `observation_runs`：摄像头启停区间、最后一次服务端观察心跳、观察策略、阈值和检测器版本；不含画面或关键点。
-- `task_lifecycle_events`、`task_step_events`：任务和步骤的完成、重开、归档等事实历史；步骤改名前后的标题都会保留。
-- 私有 `user_activity`、`account_merge_tokens`、`account_delete_tokens`、`insight_fact_coverage`：匿名活跃期清理、一次性账号操作凭证与事实历史完整性状态。
-
-洞察关闭后会立即封口当前投入段和观察区间，关闭期间不产生新的派生事实；重新开启只从当下继续，不回填关闭区间。修改统计时区会按新时区重新解释全部既有记录，而不是冻结历史日历标签。用户级投入和观察时长先做时间区间并集，避免账号合并后的重叠记录重复计时；跨时段会话的复盘和完成结果只归到实际投入最长的时段（并列时按页面时段顺序），复盘覆盖率则按会话结束时间归属当前窗口。
-
-运行中的学习计时与本地观察每 60 秒向服务端发送一次不含画面内容的存活确认。连续超过 120 秒没有服务端确认会被视为一次中断：旧区间只记录到最后确认点，重新打开页面时从当前时刻建立新区间，离线空档不会回填到计时或长期规律中。
-
-迁移位于 `supabase/migrations`。数据库验收脚本位于 `supabase/tests/database.test.sql`、`supabase/tests/account_sync.test.sql` 与 `supabase/tests/insights.test.sql`，覆盖：
-
-- 双匿名用户 RLS 隔离与越权读取失败。
-- `user_id` 所有权不可篡改。
-- 同一用户最多一个运行或暂停会话。
-- 已结束会话不可被延迟写入“复活”；取消本次学习会释放活动槽，但任务和步骤进度继续保留。
-- 暂停、恢复、摄像头状态和计时检查点使用数据库原子操作；旧标签与迟到请求不能让状态或累计时长倒退。
-- 事件起止时间不会越过所属会话的终态时间，终态后仍可确认、修正或删除事件。
-- 任务步骤结构、每用户业务记录容量与 AI 调用总量均有数据库硬限制。
-- 活动 session 存在时锁定任务观察方式，结束后下一段 session 才读取新策略快照。
-- 任务关联记录级联删除。
-- `delete_my_data()` 只清除调用者自己的全部业务记录。
-- 合并凭证短时、哈希、一次性保存，并要求新的邮箱 OTP 会话；永久删除账号同样要求独立重新验证。
-- 洞察排除实验/模拟数据、少于 2 分钟的碎片和未确认视觉事件；跨午夜片段按用户时区拆分。
-- `anon` 无业务表权限，`authenticated` 仅拥有必要 CRUD/RPC 权限。
+- 不开启云端过程观察时，摄像头帧仅在浏览器本地处理。
+- 云端观察默认关闭；单独同意后，默认每 20 秒发送一组 4 张压缩帧，覆盖最近约 6 秒。不持续上传完整视频，不申请麦克风。
+- 关闭摄像头、暂停、页面隐藏、离开页面或撤回授权时立即停止新采样和上传；迟到结果不产生提醒。
+- 应用不把原始媒体、关键点或人脸特征写入数据库、对象存储、日志或错误追踪，只保存结构化线索、覆盖和用户修正。
+- 百炼官方说明会依法存储模型与应用调用产生的数据，详见[服务商隐私说明](https://help.aliyun.com/zh/model-studio/privacy-notice)。应用不承诺第三方零留存。
+- AI 学习报告只接收本人聚合统计、采用方案与修订摘要，不接收摄像头画面。
+- 无法可靠观察的平板／手机、低光、遮挡和模型分歧返回无法判断。不输出专注分，不判断心理状态、能力、疲劳、情绪或医学状态。
+- 模拟事件明确标记，不参与真实规律统计。少于 2 分钟的碎片与未经确认的视觉事件不参与规律建议。
+- 长期规律至少需要近 30 天 20 个有效片段和 10 个活跃日，且证据完整。样本不足时只总结已有记录。
 
 ## 本地运行
 
-要求 Node.js 22+ 与 pnpm 11.9.0。
+需要 Node.js 22+、pnpm 11、Docker 和 Supabase CLI。不要把任何真实 Secret 提交到 Git。
 
-```bash
-pnpm install
+```sh
+pnpm install --frozen-lockfile
 cp .env.example .env.local
+supabase start
+supabase db reset
 pnpm dev
 ```
 
-在 `.env.local` 填写三项浏览器安全配置：
+根据本地 Supabase 输出填写 publishable URL／key。线上启用 Turnstile 时，site key 在前端，secret 在 Supabase Auth，不可混用。
 
-```dotenv
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
-NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
-```
+AI 的规划、视觉、报告分别设置模型和开关；先轮换任何曾在会话中出现过的 Key，并在百炼控制台确认“免费额度用完即停”。模型与免费额度可能变动，配置前按[官方额度说明](https://help.aliyun.com/zh/model-studio/new-free-quota/)核验。默认不自动切换付费模型。额度或服务不可用时，手动计划、计时、本地观察、复盘和事实报告继续工作。
 
-如需启用 AI 任务初稿，再填写以下仅服务端可见的变量：
+## 页面与接口
 
-```dotenv
-QWEN_API_KEY=your_server_only_key
-QWEN_BASE_URL=https://your-workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-QWEN_MODEL=qwen3.7-flash-2026-07-15
-```
+- /：公开介绍；/auth：独立邮箱密码账号与匿名入口。
+- /app：学习计划；/app/plans/new：分阶段制定计划。
+- /app/session/[id]：本次学习；/app/review/[id]：学习复盘。
+- /app/insights：学习报告；/app/settings：授权、记录和账号设置。
+- /api/planning/prepare：澄清题或推荐方案；/api/planning/review：一次修改点评。
+- /api/observation/analyze：受限图像序列分析。
+- /api/reports/generate：本人主动生成；/api/cron/reports：服务端周期调度。
 
-任务规划 AI 路由会先校验当前 Supabase 身份，服务端重新验证三个步骤和观察模式；此规划路由不接收摄像头画面、视觉关键点或人脸特征。可选云端过程观察使用独立的授权、接口和额度限制；启用前须轮换已暴露的 Key，并确认免费额度用完即停，再设置 `QWEN_VISION_ENABLED=true`。
-服务端同时限制每个匿名身份 10 分钟 8 次、全站每日 200 次（UTC），入口仍由 Turnstile 抑制批量匿名身份。百炼新人免费额度并非永久免费，生产环境还应在控制台开启“免费额度用完即停”。
+## 测试与交付
 
-不要把 legacy secret、service role key、数据库密码或 Turnstile secret 写入 `NEXT_PUBLIC_*` 变量。
-
-Supabase 端需要：
-
-1. 按文件名时间顺序应用全部迁移。PR #2 已在 Production 冒烟后完成
-   `20260908040800_revoke_direct_study_session_writes.sql` 权限切换；新环境无需再跳过该迁移。
-2. 在 Auth 设置中开启匿名身份。
-3. 配置 Cloudflare Turnstile secret，并在前端填入配套 site key。
-4. 运行 Security / Performance Advisors；新库未使用索引提示是信息项，应在产生真实流量后再评估。
-5. 启用 Email provider、开启邮箱确认与 Manual Identity Linking，并保持 Phone provider / 手机号登录关闭；JWT 的 `amr=otp` 本身不能区分邮件和短信 OTP，因此关闭 Phone Auth 是账号合并与永久删除的硬性发布门禁，服务端也会拒绝带 phone provider 的身份。登录已有账号时前端固定使用 `shouldCreateUser: false`，避免登录误创建账号。用 Resend SMTP 发送六位验证码（有效 10 分钟，60 秒后可重发）。
-6. 发布时先验证 Preview，再关闭 Production 的自动域名分配并从已合并的 `main` 生成 staged Production deployment；验证相同提交和 Production 环境变量后再原地 Promote，避免 Preview→Production 的重新构建改变验收产物。
-
-已有邮箱合并使用一段随机 capability 处理关标签页和响应丢失：原始 capability 只在浏览器 `localStorage` 保留绝对 10 分钟，不会滑动续期；其中不包含 JWT、access token 或 refresh token。隔离目标会话的 access / refresh token 仅保留在当前标签页的 `sessionStorage`，另有不含密钥的核对标记保留 24 小时，用于提示用户重新验证目标邮箱。
-
-## 测试
-
-```bash
+```sh
 pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
-
-# 首次运行 E2E 前安装 Chromium
-pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正、移动端账号操作，以及 Turnstile 脚本被阻断时的显式失败与不可绕过状态；不会写入生产数据库。
+数据库脚本位于 supabase/tests，只能运行在隔离本地库；脚本回滚测试数据，不能对生产直接执行。分别核验所有权隔离、密码注销、原子计划版本、会话状态、观察覆盖、授权撤回、报告缓存／租约／周期。
 
-数据库验收只允许在本地或其他隔离数据库运行，禁止把下面的命令改为 Production 连接串后直接执行。三份脚本自身都以 `BEGIN` / `ROLLBACK` 包裹，并使用 `ON_ERROR_STOP` 在首个失败处停止：
+真实摄像头验收与演示分开：每种目标行为重复五次、至少四次正确记录；正常学习二十分钟错误提醒不超过两次，无法判断计入漏检分析。以实际验收记录为准，不把模型说明或模拟 E2E 当成真人效果证明。
 
-```bash
-npx supabase start
-npx supabase db reset
+发布按四个 PR：账号与设计基线 → 引导规划 → 过程观察 → 学习报告与交付。每个 PR 验证 Preview；最终 staged Production 验收后原地 Promote 同一构建，生产冒烟通过后再清理旧 StudyTrace 数据，不影响其他项目。
 
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
-  -v ON_ERROR_STOP=1 \
-  -f supabase/tests/database.test.sql
+## 版本方向
 
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
-  -v ON_ERROR_STOP=1 \
-  -f supabase/tests/account_sync.test.sql
+v0.1 基础闭环 → v0.1.1 多次学习与确认完成 → v0.2 事实记录 → v0.3 引导规划、观察约定与 AI 解读。
 
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
-  -v ON_ERROR_STOP=1 \
-  -f supabase/tests/insights.test.sql
-
-# 保持本地 Supabase 与 Mailpit 运行，验证真实 Auth/OTP/合并链路
-pnpm exec playwright test --config=playwright.local-auth.config.ts
-```
-
-如果必须在共享验收库运行，应由外层事务或一次性数据库快照提供额外回滚保护，并先确认脚本中的固定测试身份不会与现有数据冲突。
-
-本地 Supabase 使用公开的开发凭据，部分 Docker 环境会把端口暴露到局域网；仅在可信网络且本机防火墙开启时运行，验收结束后执行 `npx supabase stop`。
-
-Mock E2E 与本地 SQL 通过仍不代表邮箱账号功能可以发布。Hosted Supabase 的匿名登录、邮箱确认、Manual Identity Linking、Phone Auth 关闭、Turnstile 与重定向域名必须逐项复验；Resend SMTP 配置和 QQ、163、Outlook/Gmail 的真实六位验证码投递均是 Production 发布门禁。
-
-## 隐私与数据生命周期
-
-- 原始媒体始终留在浏览器内存，关闭摄像头后立即停止抽帧与 Worker。
-- 服务器只接收任务、会话、结构化事件、提醒响应、复盘和设置。
-- 用户可修正或硬删除单条事件，也可一键清除全部业务记录。
-- 临时身份与级联数据只在连续 30 天无活动后清理；数据库每 15 分钟处理至多 50 个身份，积压时由后续批次继续推进。
-- Turnstile 用于降低匿名入口和登录 / 合并邮件的滥用；新邮箱绑定由 Supabase 邮件限流保护。
-
-## 路线图
-
-- v0.1：完整学习闭环、本地视觉事件、匿名安全数据层与可审计交付链。
-- v0.1.1：任务确认完成、横向工作台、多 Session 与邮箱验证码跨设备恢复。
-- v0.2：基于本人结构化记录生成事实型长期洞察；全身运动识别保留为后续独立实验。
+全身运动识别、持续视频理解与医学判断不在本轮范围。演示将使用真实界面录制；示例历史与模拟事件必须标记。
 
 ## English summary
 
-StudyTrace is a privacy-first execution companion that connects task planning, resumable sessions, optional on-device face-landmark observations, and review. It works anonymously by default and offers passwordless email continuity when requested. Camera frames and landmarks never leave the browser; the product avoids attention scores and diagnostic claims.
+StudyTrace turns learning intent into editable plans, repeated study sessions, optional consent-based process observation, reflection and evidence-grounded reports. Built with Next.js and Supabase; local MediaPipe inference and optional low-frequency Qwen vision. No raw camera media is stored by this application. Anonymous trials and separate password accounts are supported.
 
-## License
-
-No open-source license is granted at this time. The source is publicly viewable, but reuse, redistribution, and derivative works are not automatically permitted.
+No open-source license is granted by default. Public source visibility does not imply redistribution permission.

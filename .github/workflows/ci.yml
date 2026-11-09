@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "feat/v03-*"]
 
 permissions:
   contents: read
@@ -13,6 +13,111 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  database:
+    name: Isolated database acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      STUDYTRACE_CI_PROJECT_ID: studytrace-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and verify pinned Supabase CLI
+        timeout-minutes: 6
+        shell: bash
+        env:
+          GH_PUBLIC_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cli_bin=""
+          for attempt in 1 2; do
+            printf 'Installing pinned Supabase CLI through npm (attempt %s/2)\n' "$attempt"
+            if timeout 90s env npm_config_foreground_scripts=true npx --yes supabase@2.75.0 --version; then
+              if cli_candidate="$(timeout 30s npx --yes --package=supabase@2.75.0 -- which supabase)" && [[ -x "$cli_candidate" ]]; then
+                cli_bin="$cli_candidate"
+                break
+              fi
+            fi
+          done
+          if [[ -z "$cli_bin" ]]; then
+            printf 'npm installer unavailable; using the checksum-pinned official v2.75.0 release\n'
+            cli_dir="$(mktemp -d "$RUNNER_TEMP/studytrace-cli.XXXXXX")"
+            cli_archive="$cli_dir/supabase_linux_amd64.tar.gz"
+            # This is the same official v2.75.0 asset, through GitHub's REST
+            # download endpoint rather than the release website's 504 cache.
+            # The built-in read-only job token is never forwarded to CDN hosts.
+            curl --fail --location --retry 3 --retry-all-errors \
+              --connect-timeout 15 --max-time 120 \
+              --header "Accept: application/octet-stream" \
+              --header "Authorization: Bearer $GH_PUBLIC_READ_TOKEN" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              --output "$cli_archive" \
+              https://api.github.com/repos/supabase/cli/releases/assets/349592290
+            printf 'e5597462f865d5ac72af0453358e37ecb0d85962ad6914a114a53de847303bde  %s\n' "$cli_archive" | sha256sum --check --strict -
+            tar --extract --gzip --file "$cli_archive" --directory "$cli_dir" supabase
+            cli_bin="$cli_dir/supabase"
+          fi
+          test "$("$cli_bin" --version)" = "2.75.0"
+          printf 'STUDYTRACE_CI_SUPABASE_BIN=%s\n' "$cli_bin" >> "$GITHUB_ENV"
+
+      - name: Prepare isolated local project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = "true"
+          STUDYTRACE_CI_WORKDIR="$(mktemp -d "$RUNNER_TEMP/studytrace-db-ci.XXXXXX")"
+          mkdir -p "$STUDYTRACE_CI_WORKDIR/supabase"
+          cp supabase/config.toml "$STUDYTRACE_CI_WORKDIR/supabase/config.toml"
+          cp -R supabase/migrations "$STUDYTRACE_CI_WORKDIR/supabase/migrations"
+          sed -i "s/^project_id = .*/project_id = \"$STUDYTRACE_CI_PROJECT_ID\"/" "$STUDYTRACE_CI_WORKDIR/supabase/config.toml"
+          printf 'STUDYTRACE_CI_WORKDIR=%s\n' "$STUDYTRACE_CI_WORKDIR" >> "$GITHUB_ENV"
+
+      - name: Start local database, Auth and Data API
+        run: >-
+          "$STUDYTRACE_CI_SUPABASE_BIN" start
+          --workdir "$STUDYTRACE_CI_WORKDIR"
+          --exclude realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Run every SQL acceptance suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The insights suite reconnects to the local-only administrative role
+          # through the published 54322 port. Run the client on the runner, not
+          # inside Postgres where localhost:54322 does not exist.
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
+          sql_suites=(supabase/tests/*.sql)
+          test "${#sql_suites[@]}" -ge 9
+          for sql_suite in "${sql_suites[@]}"; do
+            printf '::group::%s\n' "$sql_suite"
+            psql --no-psqlrc \
+              --dbname postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+              --set ON_ERROR_STOP=1 --file "$sql_suite"
+            printf '::endgroup::\n'
+          done
+
+      - name: Stop only this CI project's containers and discard its data
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_ACTIONS:-}" = "true" && -n "${STUDYTRACE_CI_WORKDIR:-}" ]]; then
+            [[ "$STUDYTRACE_CI_PROJECT_ID" =~ ^studytrace-ci-[0-9]+-[0-9]+$ ]]
+            "$STUDYTRACE_CI_SUPABASE_BIN" stop \
+              --workdir "$STUDYTRACE_CI_WORKDIR" \
+              --project-id "$STUDYTRACE_CI_PROJECT_ID" --no-backup
+          fi
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20

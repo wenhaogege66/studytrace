@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useExperience } from "@/components/experience/experience-provider"
 import { ConsentSettings } from "@/components/settings/consent-settings"
+import { ReportSchedule } from "@/components/reports/report-schedule"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -180,10 +181,11 @@ export function SettingsScreen() {
 
         <TabsContent value="privacy" className="mt-5 space-y-5">
           <ConsentSettings
-            key={user?.id}
+            key={`consents:${user?.id}`}
             userId={user?.id}
             isAnonymous={user?.is_anonymous !== false}
           />
+          <ReportSchedule key={`schedule:${user?.id}`} />
           <Card className="border-indigo-100 bg-white/90">
             <CardHeader>
               <CardTitle>数据用途清单</CardTitle>

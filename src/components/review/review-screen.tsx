@@ -412,7 +412,7 @@ function ReviewFormCard({
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-slate-500">
-              这里只描述本次学习，不会改变整个任务的完成状态。
+              这里只描述本次学习，不会改变整个学习计划的完成状态。
             </p>
           </div>
           <div className="space-y-2">
@@ -554,7 +554,7 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
         <CardContent>
           <Button asChild>
             <Link href="/app">
-              <ArrowLeft /> 返回任务台
+              <ArrowLeft /> 返回学习计划
             </Link>
           </Button>
         </CardContent>
@@ -571,7 +571,7 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
         <div>
           <Button variant="ghost" size="sm" className="mb-2 -ml-2" asChild>
             <Link href="/app">
-              <ArrowLeft /> 返回任务台
+              <ArrowLeft /> 返回学习计划
             </Link>
           </Button>
           <p className="section-kicker">One-session review / 单次复盘</p>
@@ -591,8 +591,8 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
             }
           >
             {session.data.task_outcome === "completed"
-              ? "整个任务已完成"
-              : "任务将继续推进"}
+              ? "整个学习计划已完成"
+              : "学习计划将继续推进"}
           </Badge>
           {existingReview.data ? (
             <Badge className="bg-emerald-100 text-emerald-800">
@@ -692,7 +692,7 @@ export function ReviewScreen({ sessionId }: { sessionId: string }) {
       <div className="mt-6 flex justify-center">
         <Button variant="outline" asChild>
           <Link href="/app">
-            <ArrowLeft /> 回到任务台
+            <ArrowLeft /> 回到学习计划
           </Link>
         </Button>
       </div>

@@ -18,15 +18,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://studytrace.vercel.app"),
   title: {
-    default: "学迹 StudyTrace｜自律执行与本地过程观察",
+    default: "学迹 StudyTrace｜学习计划、过程观察与学习报告",
     template: "%s｜学迹 StudyTrace",
   },
   description:
-    "把任务设计、AI 拆解、多次执行、本地视觉观察、复盘与长期规律连成闭环的隐私优先自律工具。",
+    "从学习意图、AI 推荐方案到多次学习、学习复盘与学习报告。本地过程观察默认不上传，可选云端分析需单独授权。",
   keywords: [
     "自律工具",
-    "任务管理",
-    "长期洞察",
+    "学习计划",
+    "学习报告",
     "计算机视觉",
     "隐私优先",
     "StudyTrace",
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "学迹 StudyTrace",
     description:
-      "任务设计、执行记录与事实型长期洞察一体化的自律工具。画面只在本地处理。",
+      "学习计划、过程观察、学习复盘与学习报告的执行闭环。本地观察默认不上传，可选云端分析需单独授权。",
     type: "website",
     locale: "zh_CN",
   },

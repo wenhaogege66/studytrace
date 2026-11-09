@@ -52,6 +52,9 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2555,13 +2558,6 @@ packages:
     resolution:
       {
         integrity: sha512-Qts4KCLKG+waHc9C4m07weIY8qyeixoS0h6RnbsNVD6Fw+pEZGW3vTyObL3WXpE09Mq4Oi7/lBEyLmOiLtlYWQ==,
-      }
-    engines: { node: ">=8" }
-
-  ansi-styles@4.3.0:
-    resolution:
-      {
-        integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==,
       }
     engines: { node: ">=8" }
 
@@ -5070,6 +5066,12 @@ packages:
     engines: { node: ">=10" }
     hasBin: true
 
+  server-only@0.0.1:
+    resolution:
+      {
+        integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==,
+      }
+
   set-function-length@1.2.2:
     resolution:
       {
@@ -7434,10 +7436,6 @@ snapshots:
     dependencies:
       color-convert: 2.0.1
 
-  ansi-styles@4.3.0:
-    dependencies:
-      color-convert: 2.0.1
-
   ansi-styles@5.2.0: {}
 
   ansi-styles@6.1.0: {}
@@ -9078,6 +9076,8 @@ snapshots:
 
   semver@7.8.5: {}
 
+  server-only@0.0.1: {}
+
   set-function-length@1.2.2:
     dependencies:
       define-data-property: 1.1.4
@@ -9551,7 +9551,7 @@ snapshots:
 
   wrap-ansi@7.0.0:
     dependencies:
-      ansi-styles: 4.3.0
+      ansi-styles: 4.1.0
       string-width: 4.2.3
       strip-ansi: 6.0.1
 
