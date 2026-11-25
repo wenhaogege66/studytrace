@@ -11,7 +11,9 @@ test("公开首页清楚说明价值与隐私边界", async ({ page }) => {
       name: "让一次学习，留下可以调整的迹。",
     }),
   ).toBeVisible()
-  await expect(page.getByText("画面不离开设备", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("默认本地，云端需同意", { exact: true }),
+  ).toBeVisible()
   await expect(page.getByText("不做专注分数", { exact: true })).toBeVisible()
   await expect(page.getByText(/跨天任务|阶段总结/)).toHaveCount(0)
   await expect(

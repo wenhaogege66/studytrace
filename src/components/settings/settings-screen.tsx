@@ -189,7 +189,7 @@ export function SettingsScreen() {
                 },
                 {
                   icon: EyeOff,
-                  title: "绝不保存",
+                  title: "本应用不保存",
                   description:
                     "摄像头视频、图片、音频、人脸关键点、人脸特征和可重建画面的帧。",
                 },
@@ -197,7 +197,7 @@ export function SettingsScreen() {
                   icon: Sparkles,
                   title: "按需发送给 AI",
                   description:
-                    "仅在你点击“AI 生成 3 步”时，将任务标题和预计时长发送给阿里云百炼；不发送摄像头、视觉事件或已有学习记录。",
+                    "点击“AI 生成 3 步”时发送任务标题和预计时长。云端视觉另需本次学习中单独同意，才会将摄像头抽样画面与当前任务发送给阿里云百炼；本应用不留存原始图片，服务商处理遵循其政策。",
                 },
                 {
                   icon: ShieldCheck,
@@ -216,7 +216,7 @@ export function SettingsScreen() {
                       {index === 1
                         ? "0 条"
                         : index === 2
-                          ? "仅主动点击时"
+                          ? "需主动授权"
                           : "仅当前匿名会话"}
                     </Badge>
                   </SettingRow>
@@ -230,7 +230,7 @@ export function SettingsScreen() {
               <ShieldCheck className="mt-0.5 size-5 shrink-0" />
               <p>
                 匿名身份清除浏览器数据或换设备后无法恢复。匿名身份与其级联业务记录默认在创建
-                30 天后由数据库定时清理。
+                30 天后由数据库定时清理，持续使用不延长。
               </p>
             </CardContent>
           </Card>
@@ -241,7 +241,7 @@ export function SettingsScreen() {
             <CardHeader>
               <CardTitle>摄像头与实验模式</CardTitle>
               <CardDescription>
-                摄像头只能在学习会话中由你主动开启。
+                摄像头只能在学习会话中由你主动开启。默认只做本地识别，云端观察需另行确认。
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -420,7 +420,7 @@ export function SettingsScreen() {
               </CardTitle>
               <CardDescription>
                 删除任务、会话、事件、提醒、复盘、设置与临时 AI
-                限流计数。匿名会话本身仍留在当前浏览器，以便继续创建新数据。
+                任务规划限流计数；云端视觉会保留每日用量计数，避免删除记录重置额度。匿名会话本身仍留在当前浏览器，以便继续创建新数据。
               </CardDescription>
             </CardHeader>
             <CardContent>
