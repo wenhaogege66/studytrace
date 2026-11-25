@@ -1,5 +1,9 @@
 import type { Json, Tables } from "@/types/database"
 import {
+  visualObservationSchema,
+  type VisualObservation,
+} from "@/lib/ai/vision-observation-contract"
+import {
   parseObservationProfile,
   type ObservationProfile,
 } from "@/lib/vision/profiles"
@@ -16,9 +20,9 @@ export type TaskDisplayStatus =
   | "archived"
 export type SessionStatus = "running" | "paused" | "completed" | "cancelled"
 export type BehaviorEventType =
-  "face_absent" | "head_direction_change" | "manual"
+  "face_absent" | "head_direction_change" | "manual" | "visual_observation"
 export type EventDirection = "left" | "right" | "down" | "unknown"
-export type EventSource = "vision" | "simulation" | "manual"
+export type EventSource = "vision" | "simulation" | "manual" | "cloud_vision"
 export type CompletionStatus =
   "completed" | "partially_completed" | "not_completed"
 export type SessionOutcome = CompletionStatus
@@ -47,11 +51,12 @@ export type StudySession = Omit<
 
 export type BehaviorEvent = Omit<
   Tables<"behavior_events">,
-  "event_type" | "direction" | "source"
+  "event_type" | "direction" | "source" | "visual_observation"
 > & {
   event_type: BehaviorEventType
   direction: EventDirection | null
   source: EventSource
+  visual_observation?: VisualObservation | null
 }
 
 export type Review = Omit<Tables<"reviews">, "completion_status"> & {
@@ -150,6 +155,8 @@ export function mapBehaviorEvent(
     event_type: row.event_type as BehaviorEventType,
     direction: row.direction as EventDirection | null,
     source: row.source as EventSource,
+    visual_observation:
+      visualObservationSchema.safeParse(row.visual_observation).data ?? null,
   }
 }
 
