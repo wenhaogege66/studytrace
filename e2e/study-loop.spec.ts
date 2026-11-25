@@ -2,10 +2,44 @@ import { expect, test } from "@playwright/test"
 
 import { installMockSupabase } from "./mock-supabase"
 
+const planRequests = new WeakMap<object, string[]>()
+
 test.beforeEach(async ({ page }, testInfo) => {
+  const requests: string[] = []
+  planRequests.set(page, requests)
+  page.on("request", (request) => {
+    if (/learning_plan|\/api\/plans\//.test(request.url()))
+      requests.push(request.url())
+  })
   await installMockSupabase(page, {
     resumeDelayMs: testInfo.title.includes("待决恢复") ? 1_000 : undefined,
   })
+})
+
+test.afterEach(async ({ page }) => {
+  expect(planRequests.get(page)).toEqual([])
+})
+
+test("独立任务可永久删除且不依赖计划存储", async ({ page }) => {
+  await page.goto("/app")
+  await page.getByRole("button", { name: "新建任务" }).first().click()
+  await page.getByLabel("任务标题").fill("删除验证任务")
+  await page
+    .getByRole("textbox", { name: "步骤 1", exact: true })
+    .fill("验证任务删除")
+  await page.getByRole("button", { name: "创建任务" }).click()
+  await expect(
+    page.getByRole("heading", { name: "删除验证任务" }),
+  ).toBeVisible()
+  await page.getByRole("button", { name: "任务操作" }).click()
+  await page.getByRole("menuitem", { name: "删除任务" }).click()
+  await page
+    .getByRole("alertdialog", { name: "删除“删除验证任务”？" })
+    .getByRole("button", { name: "永久删除" })
+    .click()
+  await expect(page.getByRole("heading", { name: "删除验证任务" })).toHaveCount(
+    0,
+  )
 })
 
 test("任务、学习会话、摄像头拒绝与复盘构成完整降级闭环", async ({ page }) => {
