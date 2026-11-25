@@ -30,6 +30,7 @@ export type Database = {
           started_at: string
           updated_at: string
           user_id: string
+          visual_observation?: Json | null
         }
         Insert: {
           corrected_direction?: string | null
@@ -46,6 +47,7 @@ export type Database = {
           started_at: string
           updated_at?: string
           user_id: string
+          visual_observation?: Json | null
         }
         Update: {
           corrected_direction?: string | null
@@ -62,6 +64,7 @@ export type Database = {
           started_at?: string
           updated_at?: string
           user_id?: string
+          visual_observation?: Json | null
         }
         Relationships: [
           {
@@ -343,6 +346,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      set_vision_consent: {
+        Args: { p_session_id: string; p_enabled: boolean }
+        Returns: string
+      }
+      reserve_vision_observation: {
+        Args: { p_session_id: string; p_consent_token: string }
+        Returns: { request_id: string; title: string; steps: Json; observation_profile: string }[]
+      }
+      save_vision_observation: {
+        Args: { p_session_id: string; p_consent_token: string; p_request_id: string; p_observation: Json }
+        Returns: Database["public"]["Tables"]["behavior_events"]["Row"]
+      }
       cancel_study_session: {
         Args: { p_accumulated_seconds: number; p_session_id: string }
         Returns: {

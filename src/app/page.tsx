@@ -42,7 +42,7 @@ const loop: Feature[] = [
     icon: Clock3,
     title: "学习中 · 计时与轻观察",
     description:
-      "稳定计时；摄像头可选开启。模型只在浏览器本地观察“未在画面”或“头部方向明显变化”。",
+      "稳定计时；摄像头可选开启。本地观察画面信号，也可单独同意云端结合当前任务生成待确认事件。",
   },
   {
     icon: RefreshCcw,
@@ -55,8 +55,9 @@ const loop: Feature[] = [
 const principles: Feature[] = [
   {
     icon: EyeOff,
-    title: "画面不离开设备",
-    description: "视频、图片、音频、人脸关键点与人脸特征都不上传、不保存。",
+    title: "默认本地，云端需同意",
+    description:
+      "本地识别不上传画面；云端观察单独授权后发送抽样图片。本应用不保存原始媒体。",
   },
   {
     icon: CircleDotDashed,
@@ -73,7 +74,7 @@ const principles: Feature[] = [
     icon: TimerReset,
     title: "可删除、会过期",
     description:
-      "事件可确认、改写或硬删除；全部数据可一键清除，匿名记录默认保留 30 天。",
+      "事件可确认、改写或硬删除；全部数据可一键清除，匿名身份与其业务记录在身份创建满 30 天后清理，持续使用不延长。",
   },
 ]
 
@@ -133,7 +134,7 @@ export default function Home() {
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-pretty text-slate-600 sm:text-xl">
               学迹
-              StudyTrace——基于计算机视觉的任务管理与注意状态识别一体化学习辅助系统。它把任务拆分、稳定计时、本地视觉观察与一次复盘连成闭环。
+              StudyTrace——基于计算机视觉的任务管理与行为观察一体化学习辅助系统。它把任务拆分、稳定计时、可选视觉观察与一次复盘连成闭环。
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Button size="lg" className="h-11 px-5" asChild>
@@ -203,7 +204,7 @@ export default function Home() {
                   <div>
                     <p className="font-medium">当前状态：中性姿态</p>
                     <p className="mt-1 text-sm text-emerald-800">
-                      帧在浏览器本地处理，网络中没有视频上传。
+                      默认帧在浏览器本地处理；另行同意云端观察后才发送抽样图片。
                     </p>
                   </div>
                 </div>
@@ -399,7 +400,7 @@ export default function Home() {
             {[
               [
                 "v0.1 · 当前",
-                "完整任务—会话—复盘闭环；本地视觉观察；匿名安全数据层。",
+                "完整任务—会话—复盘闭环；本地及可选云端观察；匿名安全数据层。",
                 true,
               ],
               [
@@ -409,7 +410,7 @@ export default function Home() {
               ],
               [
                 "v0.3 · 验证后",
-                "在明确同意前提下探索跨设备恢复与数据导出，不改变本地视觉原则。",
+                "在明确同意前提下探索跨设备恢复与数据导出。",
                 false,
               ],
             ].map(([title, description, current]) => (

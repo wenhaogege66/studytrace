@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
+import { captureCloudFrame, CloudVisionControl } from "./cloud-vision-control"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -82,7 +83,7 @@ export function VisionPanel({
     pitch_threshold_degrees: number
     reminders_enabled: boolean
   }
-  onCameraStateChange: (enabled: boolean) => void
+  onCameraStateChange: (enabled: boolean) => Promise<boolean>
 }) {
   const profile = getObservationProfile(observationProfile)
   const events = useEventMutations(sessionId)
@@ -90,6 +91,8 @@ export function VisionPanel({
   const [error, setError] = useState<string | null>(null)
   const [statusText, setStatusText] = useState("摄像头未开启")
   const [calibrationProgress, setCalibrationProgress] = useState(0)
+  const [cameraReady, setCameraReady] = useState(false)
+  const cloudStopRef = useRef<() => void>(() => {})
   const [calibrationWaitingForFace, setCalibrationWaitingForFace] =
     useState(true)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -174,6 +177,9 @@ export function VisionPanel({
       stoppingRef.current = true
       try {
         startOperationRef.current += 1
+        cloudStopRef.current()
+        setCameraReady(false)
+        void onCameraStateChange(false).catch(() => undefined)
         if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current)
         initTimeoutRef.current = null
         if (intervalRef.current) clearInterval(intervalRef.current)
@@ -198,7 +204,6 @@ export function VisionPanel({
           )
           setCalibrationProgress(0)
           setCalibrationWaitingForFace(true)
-          onCameraStateChange(false)
         }
       } finally {
         stoppingRef.current = false
@@ -355,6 +360,15 @@ export function VisionPanel({
         return
       }
       streamRef.current = stream
+      stream.getTracks().forEach((track) => {
+        track.addEventListener?.(
+          "ended",
+          () => {
+            if (streamRef.current === stream) void stop()
+          },
+          { once: true },
+        )
+      })
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -388,7 +402,22 @@ export function VisionPanel({
             setCalibrationWaitingForFace(true)
             setCalibrationProgress(0)
             setStatusText("等待你进入画面，识别到有效面部后再开始基线采集")
-            onCameraStateChange(true)
+            void onCameraStateChange(true)
+              .then((saved) => {
+                if (
+                  mountedRef.current &&
+                  operationId === startOperationRef.current &&
+                  streamRef.current === stream
+                )
+                  setCameraReady(saved === true)
+              })
+              .catch(() => {
+                if (
+                  mountedRef.current &&
+                  operationId === startOperationRef.current
+                )
+                  setCameraReady(false)
+              })
             startSampling()
             return
           }
@@ -502,6 +531,14 @@ export function VisionPanel({
   }, [paused, phase, stop])
 
   useEffect(() => {
+    const hidden = () => {
+      if (document.visibilityState === "hidden") void stop()
+    }
+    document.addEventListener("visibilitychange", hidden)
+    return () => document.removeEventListener("visibilitychange", hidden)
+  }, [stop])
+
+  useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
@@ -525,7 +562,7 @@ export function VisionPanel({
               <Eye className="size-5 text-indigo-700" /> 场景化本地观察
             </CardTitle>
             <CardDescription className="mt-1">
-              {profile.description} 原始画面不会上传。
+              {profile.description} 本地观察不上传画面；云端观察需另行同意。
             </CardDescription>
           </div>
           {experimentMode ? (
@@ -556,7 +593,7 @@ export function VisionPanel({
                 muted
                 playsInline
                 className="size-full -scale-x-100 object-cover"
-                aria-label="仅本地显示的摄像头预览"
+                aria-label="摄像头预览（云端需另行同意）"
               />
               {!showingCamera ? (
                 <div className="absolute inset-0 grid place-items-center bg-slate-950 text-center text-slate-300">
@@ -631,6 +668,16 @@ export function VisionPanel({
             </div>
           </>
         )}
+        <CloudVisionControl
+          sessionId={sessionId}
+          paused={paused}
+          observationProfile={observationProfile}
+          cameraActive={cameraReady}
+          capture={() =>
+            videoRef.current ? captureCloudFrame(videoRef.current) : null
+          }
+          stopRef={cloudStopRef}
+        />
         <p className="text-xs leading-5 text-slate-500">
           只保存事件类型、方向、起止时间、来源和你的修正。不会形成专注分数或医学判断。
         </p>

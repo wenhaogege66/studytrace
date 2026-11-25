@@ -1308,19 +1308,6 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
-do $$
-begin
-  begin
-    update public.tasks
-    set user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-    where id = '10000000-0000-4000-8000-000000000001';
-    raise exception 'task ownership was mutable';
-  exception
-    when insufficient_privilege then null;
-  end;
-end;
-$$;
-
 insert into public.tasks (
   id,
   user_id,
@@ -1337,6 +1324,20 @@ values (
   'high',
   20
 );
+
+-- Use the fresh planned task so the completed-task guard cannot mask RLS.
+do $$
+begin
+  begin
+    update public.tasks
+    set user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    where id = '10000000-0000-4000-8000-000000000003';
+    raise exception 'task ownership was mutable';
+  exception
+    when insufficient_privilege then null;
+  end;
+end;
+$$;
 
 reset role;
 

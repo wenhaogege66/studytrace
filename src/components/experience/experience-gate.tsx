@@ -95,12 +95,12 @@ export function ExperienceGate({ children }: { children: ReactNode }) {
             先把要做的事说清楚，再开始一段可复盘的学习。
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-pretty text-slate-600 sm:text-lg">
-            学迹把任务、计时、本地视觉观察与一次复盘连成闭环。它只记录可由你修正的行为事件，不上传摄像头画面，也不给你打“专注分”。
+            学迹把任务、计时、可选视觉观察与一次复盘连成闭环。默认在本地处理画面；云端观察需在学习中单独同意。它只记录可由你修正的行为事件，不给你打“专注分”。
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
               [Database, "匿名保存", "清除浏览器数据后不可恢复"],
-              [EyeOff, "本地识别", "画面与人脸关键点不上传"],
+              [EyeOff, "默认本地", "云端抽样需另行同意"],
               [ShieldCheck, "你可修正", "确认、改写或硬删除事件"],
             ].map(([Icon, title, description]) => (
               <div

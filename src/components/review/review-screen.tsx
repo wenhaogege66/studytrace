@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
+import { CloudObservationSummary } from "@/components/session/cloud-observation-summary"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,6 +77,7 @@ import {
 } from "@/lib/domain"
 
 function sourceLabel(source: BehaviorEvent["source"]) {
+  if (source === "cloud_vision") return "云端观察"
   if (source === "vision") return "本地识别"
   if (source === "simulation") return "模拟"
   return "手动"
@@ -91,6 +93,7 @@ function effectiveEventLabel(event: BehaviorEvent) {
       ? event.corrected_direction
       : event.direction
   if (type === "not_relevant") return "与本次复盘无关"
+  if (type === "visual_observation") return "视觉观察（待核对）"
   if (type === "face_absent") return "未在画面"
   if (type === "manual") return "手动标记"
   const map: Record<string, string> = {
@@ -144,6 +147,11 @@ function EventCorrectionDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                {event.event_type === "visual_observation" ? (
+                  <SelectItem value="visual_observation">
+                    保留云端观察
+                  </SelectItem>
+                ) : null}
                 <SelectItem value="face_absent">未在画面</SelectItem>
                 <SelectItem value="head_direction_change">
                   头部方向变化
@@ -207,7 +215,7 @@ function EventCorrectionDialog({
   )
 }
 
-function EventItem({
+export function EventItem({
   event,
   sessionId,
 }: {
@@ -245,15 +253,20 @@ function EventItem({
             <Badge className="bg-indigo-100 text-indigo-800">已修正</Badge>
           ) : null}
         </div>
+        {event.source === "cloud_vision" ? (
+          <CloudObservationSummary observation={event.visual_observation} />
+        ) : null}
         <p className="mt-1 text-xs text-slate-500">
           {new Date(event.started_at).toLocaleTimeString("zh-CN", {
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit",
           })}
-          {durationSeconds === null
-            ? " · 会话结束时仍在进行"
-            : ` · 持续 ${durationSeconds} 秒`}
+          {event.source === "cloud_vision"
+            ? " · 瞬时观察"
+            : durationSeconds === null
+              ? " · 会话结束时仍在进行"
+              : ` · 持续 ${durationSeconds} 秒`}
           {event.correction_note ? ` · ${event.correction_note}` : ""}
         </p>
       </div>

@@ -1,6 +1,6 @@
 # 学迹 StudyTrace
 
-学迹是一款隐私优先的学习辅助 Web 产品，把「任务拆分 → 稳定计时 → 可选的本地视觉观察 → 单次复盘」连成一个真实可操作的闭环。
+学迹是一款隐私优先的学习辅助 Web 产品，把「任务拆分 → 稳定计时 → 可选视觉观察 → 单次复盘」连成一个真实可操作的闭环。
 
 [在线体验](https://studytrace.vercel.app) · [产品首页](https://studytrace.vercel.app) · [公开仓库](https://github.com/wenhaogege66/studytrace)
 
@@ -17,6 +17,7 @@
 - 任务：创建、拆分步骤、优先级、预计时长、编辑和删除；可由千问生成三步可编辑初稿。
 - 会话：开始、暂停、恢复、刷新恢复计时、完成步骤和手动标记；一个大任务可由多段 session 推进，每段都可结束后复盘或跳过复盘。
 - 本地视觉：任务可选“屏幕学习 / 纸笔学习 / 离开设备”观察方式；MediaPipe Face Landmarker 在 Web Worker 中按需运行，摄像头画面、帧、关键点与人脸特征不上传、不保存。
+- 云端视觉：开启摄像头后另行同意本次上传，Qwen 结合抽样画面与当前任务返回可观察信号、任务关联和不确定性，生成待确认事件；可随时关闭，模型失败自动停用云端。
 - 事件：滚动窗口去抖、低打扰提醒、来源标记、确认、修正与硬删除。
 - 复盘：预计/实际时长、事件时间线、完成情况、自我感受和下次调整。
 - 隐私：匿名会话、逐行权限隔离、全部数据清除、30 天匿名数据清理。
@@ -31,7 +32,8 @@ Next.js 16 App Router
 ├── 静态公开首页 /
 └── 动态应用 /app
     ├── React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
-    ├── Qwen Flash ── 仅生成可编辑任务初稿与白名单观察建议
+    ├── Qwen 文本模型 ── 可编辑任务初稿与白名单观察建议
+    ├── Qwen 视觉模型 ── 单独授权的抽样画面 + 当前任务 ── 结构化事件
     ├── TanStack Query ── Supabase Data API
     ├── timer reducer/ref ── 刷新恢复
     └── Camera ── 4 FPS frames ── MediaPipe Web Worker
@@ -68,11 +70,19 @@ Supabase 中的六张业务表均启用 RLS。浏览器只使用 publishable key
 
 数据库没有用于保存视频、图片、音频、人脸关键点、生物特征或原始帧的列。MediaPipe 模型与 WASM 放在 `public/mediapipe`，只在用户主动开启摄像头后加载。
 
+## 可选云端视觉
+
+屏幕及纸笔模式可在开启摄像头后单独授权云端观察，上传的是摄像头抽样帧，不采集桌面或屏幕共享。每 30 秒最多一张 JPEG，最长边 640 像素；服务端限制解码后 256 KiB、请求正文 360 KiB，最多一个在途请求。暂停、关闭摄像头、页面隐藏或离开页面会停止上传并撤销本次授权；恢复后需要再次确认。
+
+服务端从本人运行会话读取当前任务；原子配额为每用户 UTC 日 120 次、每会话 60 次、最小间隔 30 秒，失败也计入额度，删除业务记录不重置每日额度。模型超时 12 秒，失败不影响计时、本地观察及手动复盘。事件标记“云端观察”，只保存观察信号、任务关联及短描述，保留用户确认、修正和硬删除权；单张画面不推断行为持续时间或任务完成情况。
+
+本应用只在请求内存中处理抽样图片，不写入日志、文件、数据库或对象存储。阿里云百炼会接收图片与任务，其数据处理遵循服务商政策，本应用不承诺服务商零留存。
+
 ## 数据模型与安全
 
 - `tasks`：任务、步骤 JSON、优先级、预计时长、状态和用户确认的观察方式。
 - `study_sessions`：计时状态、累计时长、摄像头与提醒状态，并快照开始当时的观察方式。
-- `behavior_events`：类型、方向、来源、起止时间和用户修正。
+- `behavior_events`：类型、方向、来源、起止时间、云端结构化观察和用户修正。
 - `reminder_events`：提醒展示与响应。
 - `reviews`：完成状态、自评、未完成原因和下次调整。
 - `user_settings`：授权版本、开关、阈值和隐私设置。
@@ -115,9 +125,10 @@ NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key
 QWEN_API_KEY=your_server_only_key
 QWEN_BASE_URL=https://your-workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.7-flash-2026-07-15
+QWEN_VISION_MODEL=qwen3-vl-plus
 ```
 
-AI 路由会先校验当前 Supabase 匿名会话，服务端重新验证三个步骤和观察模式；千问不会收到摄像头画面、视觉关键点或人脸特征。
+任务规划路由会先校验当前 Supabase 匿名会话，服务端重新验证三个步骤和观察模式；该文字接口不接收摄像头画面。云端视觉使用独立模型配置和独立授权/配额接口。
 服务端同时限制每个匿名身份 10 分钟 8 次、全站每日 200 次（UTC），入口仍由 Turnstile 抑制批量匿名身份。百炼新人免费额度并非永久免费，生产环境还应在控制台开启“免费额度用完即停”。
 
 不要把 legacy secret、service role key、数据库密码或 Turnstile secret 写入 `NEXT_PUBLIC_*` 变量。
@@ -145,27 +156,27 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端公开首页；不会写入生产数据库。
+Vitest 覆盖计时状态机与恢复、视觉校准与滚动窗口、事件起止、提醒冷却和数据转换。Playwright 使用本地拦截的 Supabase / AI 契约数据，覆盖桌面完整闭环、多段 session、导航自动暂停、归档恢复、任务删除、匿名入口、示例数据、摄像头拒绝、刷新恢复、事件修正与移动端首页和任务导航；不会写入生产数据库，也不能证明真实外部服务可用。
 
 数据库脚本应在隔离环境或单事务中以 `ON_ERROR_STOP` 执行。脚本自身以 `BEGIN` / `ROLLBACK` 包裹，不保留测试用户或业务数据。
 
 ## 隐私与数据生命周期
 
-- 原始媒体始终留在浏览器内存，关闭摄像头后立即停止抽帧与 Worker。
-- 服务器只接收任务、会话、结构化事件、提醒响应、复盘和设置。
+- 默认原始媒体只在浏览器内存处理，关闭摄像头后立即停止抽帧与 Worker。
+- 单独授权云端观察后，服务端短暂接收抽样图片与当前任务，并转发给百炼；本应用只持久保存结构化事件。
 - 用户可修正或硬删除单条事件，也可一键清除全部业务记录。
-- 匿名身份与级联数据默认在创建 30 天后由数据库定时任务清理。
+- 匿名身份与级联数据在身份创建满 30 天后由数据库定时任务清理，持续使用不延长。
 - Turnstile 只用于降低匿名入口滥用，不建立产品账号概念。
 
 ## 路线图
 
 - v0.1：完整学习闭环、本地视觉事件、匿名安全数据层与可审计交付链。
 - v0.2：增加任务的会话历史入口；为用户明确选择的“镜头内运动”按需加载 MediaPipe Pose Landmarker，先做身体入镜与运动位移等低层线索，再以实验模式探索动作计次。
-- v0.3：在明确同意前提下探索数据导出与跨设备恢复，不改变本地视觉原则。
+- v0.3：在明确同意前提下探索数据导出与跨设备恢复。
 
 ## English summary
 
-StudyTrace is a privacy-first learning companion that connects task planning, a resumable study timer, optional on-device face-landmark observations, and a single-session review. Camera frames and landmarks never leave the browser. The server stores only user-correctable structured events, and the product deliberately avoids attention scores, diagnostic claims, and account-facing UI.
+StudyTrace connects task planning, a resumable study timer, optional visual observations, and a single-session review. Local face-landmark processing is the default. Separately authorized cloud observation sends sampled camera images and the current task to Qwen; this application does not persist raw images. The product stores user-correctable structured events and avoids attention scores and diagnostic claims.
 
 ## License
 

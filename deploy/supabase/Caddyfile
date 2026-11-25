@@ -1,0 +1,39 @@
+{
+	admin off
+	auto_https off
+}
+
+:8000 {
+	header {
+		Access-Control-Allow-Origin "http://localhost:3000"
+		Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "authorization, apikey, content-type, x-client-info, prefer, range, accept-profile, content-profile, x-supabase-api-version"
+		Access-Control-Expose-Headers "content-range, preference-applied, x-total-count"
+		Vary Origin
+	}
+	@preflight method OPTIONS
+	handle @preflight {
+		respond "" 204
+	}
+	handle /auth/v1/health {
+		rewrite * /health
+		reverse_proxy auth:9999
+	}
+	@unauthorized not header apikey {$ANON_KEY}
+	handle @unauthorized {
+		respond "Invalid API key" 401
+	}
+	handle_path /auth/v1/* {
+		reverse_proxy auth:9999 {
+			header_down -Access-Control-Allow-Origin
+		}
+	}
+	handle_path /rest/v1/* {
+		reverse_proxy rest:3000 {
+			header_down -Access-Control-Allow-Origin
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
