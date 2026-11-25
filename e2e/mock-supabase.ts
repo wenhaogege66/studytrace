@@ -137,6 +137,9 @@ export async function installMockSupabase(
     seedSession?: boolean
     seedSettings?: boolean
     resumeDelayMs?: number
+    cloudVision?: boolean
+    cameraDelayMs?: number
+    visionFailure?: boolean
   } = {},
 ) {
   const settings: Row[] = options.seedSettings === false ? [] : [settingRow()]
@@ -145,6 +148,110 @@ export async function installMockSupabase(
   const behaviorEvents: Row[] = []
   const reminders: Row[] = []
   const reviews: Row[] = []
+  const visionCalls: { endpoint: string; enabled?: boolean }[] = []
+  const grants = new Map<string, string>()
+
+  if (options.cloudVision) {
+    await page.route("**/api/vision/**", async (route) => {
+      const request = route.request()
+      const endpoint = new URL(request.url()).pathname.split("/").at(-1)!
+      const body = request.postDataJSON() as Row
+      visionCalls.push({
+        endpoint,
+        enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+      })
+      const session = sessions.find((row) => row.id === body.sessionId)
+      const authorization = request.headers().authorization ?? ""
+      let authenticated = false
+      try {
+        const claims = JSON.parse(
+          Buffer.from(
+            authorization.slice(7).split(".")[1],
+            "base64url",
+          ).toString(),
+        )
+        authenticated =
+          authorization.startsWith("Bearer ") && claims.sub === userId
+      } catch {}
+      if (!authenticated) {
+        await fulfillJson(route, { error: "VISION_AUTH_REQUIRED" }, 401)
+        return
+      }
+      if (!session || session.user_id !== userId) {
+        await fulfillJson(route, { error: "VISION_REQUEST_REJECTED" }, 404)
+        return
+      }
+      if (endpoint === "consent" && body.enabled === false) {
+        grants.delete(String(session.id))
+        await fulfillJson(route, { consentToken: null })
+        return
+      }
+      if (
+        session.status !== "running" ||
+        !session.camera_enabled ||
+        session.observation_profile === "off_device_v1"
+      ) {
+        await fulfillJson(route, { error: "VISION_REQUEST_REJECTED" }, 409)
+        return
+      }
+      if (endpoint === "consent" && body.enabled === true) {
+        const consentToken = crypto.randomUUID()
+        grants.set(String(session.id), consentToken)
+        await fulfillJson(route, { consentToken })
+        return
+      }
+      if (
+        endpoint !== "observe" ||
+        body.consentToken !== grants.get(String(session.id))
+      ) {
+        await fulfillJson(route, { error: "VISION_REQUEST_REJECTED" }, 409)
+        return
+      }
+      const image = typeof body.image === "string" ? body.image : ""
+      const bytes = Buffer.from(
+        image.replace(/^data:image\/jpeg;base64,/, ""),
+        "base64",
+      )
+      if (
+        !image.startsWith("data:image/jpeg;base64,") ||
+        bytes.length > 256 * 1024 ||
+        bytes[0] !== 0xff ||
+        bytes[1] !== 0xd8 ||
+        bytes[2] !== 0xff
+      ) {
+        await fulfillJson(route, { error: "VISION_INVALID_REQUEST" }, 400)
+        return
+      }
+      if (options.visionFailure) {
+        await fulfillJson(route, { error: "VISION_PROVIDER_FAILED" }, 502)
+        return
+      }
+      const timestamp = now()
+      const event: Row = {
+        id: crypto.randomUUID(),
+        user_id: userId,
+        session_id: session.id,
+        event_type: "visual_observation",
+        source: "cloud_vision",
+        direction: null,
+        started_at: timestamp,
+        ended_at: timestamp,
+        visual_observation: {
+          signal: "unknown",
+          taskRelevance: "uncertain",
+          summary: "测试画面不足以判断当前活动",
+        },
+        review_status: "pending",
+        corrected_type: null,
+        corrected_direction: null,
+        correction_note: null,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }
+      behaviorEvents.push(event)
+      await fulfillJson(route, { event })
+    })
+  }
 
   if (options.seedSession !== false) {
     await page.addInitScript(
@@ -369,6 +476,10 @@ export async function installMockSupabase(
     }
 
     if (url.pathname === "/rest/v1/rpc/set_study_session_camera") {
+      if (options.cameraDelayMs)
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.cameraDelayMs),
+        )
       const body = (request.postDataJSON() ?? {}) as Row
       const session = sessions.find((row) => row.id === body.p_session_id)
       if (!session) {
@@ -752,4 +863,5 @@ export async function installMockSupabase(
       405,
     )
   })
+  return { tasks, sessions, behaviorEvents, visionCalls }
 }

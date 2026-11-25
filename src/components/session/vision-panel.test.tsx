@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  act,
+  fireEvent,
+  render as renderUI,
+  screen,
+} from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mutations = vi.hoisted(() => ({
@@ -20,6 +26,19 @@ vi.mock("sonner", () => ({
     error: vi.fn(),
     info: vi.fn(),
     success: vi.fn(),
+  }),
+}))
+
+vi.mock("@/components/experience/experience-provider", () => ({
+  useExperience: () => ({ user: { id: "user-1" } }),
+}))
+vi.mock("@/lib/supabase/client", () => ({
+  getSupabase: () => ({
+    auth: {
+      getSession: async () => ({
+        data: { session: { access_token: "test-bearer" } },
+      }),
+    },
   }),
 }))
 
@@ -56,7 +75,16 @@ const originalMediaDevices = Object.getOwnPropertyDescriptor(
   "mediaDevices",
 )
 
-function renderPanel(onCameraStateChange = vi.fn()) {
+function render(ui: React.ReactElement) {
+  const client = new QueryClient()
+  return renderUI(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  })
+}
+
+function renderPanel(onCameraStateChange = vi.fn().mockResolvedValue(true)) {
   render(
     <VisionPanel
       sessionId="session-1"
@@ -115,6 +143,42 @@ describe("VisionPanel model initialization cleanup", () => {
     expect(worker.terminate).toHaveBeenCalledOnce()
     expect(stopTrack).toHaveBeenCalledOnce()
     expect(onCameraStateChange).toHaveBeenLastCalledWith(false)
+    expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
+  })
+
+  it("waits for persisted camera readiness before permitting cloud consent", async () => {
+    let ready!: (enabled: boolean) => void
+    const saved = new Promise<boolean>((resolve) => {
+      ready = resolve
+    })
+    renderPanel(vi.fn().mockReturnValue(saved))
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    await act(async () => {})
+    await act(async () => TestWorker.instances[0].emit({ type: "ready" }))
+    expect(screen.getByRole("button", { name: "开启云端观察" })).toBeDisabled()
+    await act(async () => ready(true))
+    expect(screen.getByRole("button", { name: "开启云端观察" })).toBeEnabled()
+  })
+
+  it("ignores readiness arriving after camera stop, while preserving the local flow", async () => {
+    let ready!: (enabled: boolean) => void
+    const saved = new Promise<boolean>((resolve) => {
+      ready = resolve
+    })
+    renderPanel(
+      vi
+        .fn()
+        .mockImplementation((enabled) =>
+          enabled ? saved : Promise.resolve(false),
+        ),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "开启本地观察" }))
+    await act(async () => {})
+    await act(async () => TestWorker.instances[0].emit({ type: "ready" }))
+    fireEvent.click(screen.getByRole("button", { name: "关闭摄像头" }))
+    expect(stopTrack).toHaveBeenCalledOnce()
+    await act(async () => ready(true))
+    expect(screen.getByRole("button", { name: "开启云端观察" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "开启本地观察" })).toBeEnabled()
   })
 
@@ -296,7 +360,7 @@ describe("VisionPanel model initialization cleanup", () => {
         paused={false}
         experimentMode={false}
         observationProfile="study_screen_v1"
-        onCameraStateChange={vi.fn()}
+        onCameraStateChange={vi.fn().mockResolvedValue(true)}
       />,
     )
 
@@ -339,7 +403,7 @@ describe("VisionPanel model initialization cleanup", () => {
         paused
         experimentMode={false}
         observationProfile="study_screen_v1"
-        onCameraStateChange={vi.fn()}
+        onCameraStateChange={vi.fn().mockResolvedValue(true)}
       />
     )
     rerender(pausedPanel)

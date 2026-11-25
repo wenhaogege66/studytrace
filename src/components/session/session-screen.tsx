@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react"
 import { toast } from "sonner"
 
+import { CloudObservationSummary } from "./cloud-observation-summary"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -75,6 +76,7 @@ const VisionPanel = dynamic(
 )
 
 function eventLabel(event: BehaviorEvent) {
+  if (event.source === "cloud_vision") return "云端观察（待核对）"
   if (event.source === "simulation") return "模拟事件"
   if (event.event_type === "face_absent") return "未在画面"
   if (event.event_type === "manual") return "手动标记"
@@ -646,7 +648,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
             onCameraStateChange={(enabled) => {
               const cameraVersion = cameraVersionRef.current + 1
               cameraVersionRef.current = cameraVersion
-              void sessionMutations.camera
+              return sessionMutations.camera
                 .mutateAsync({
                   sessionId,
                   expectedStateVersion: stateVersionRef.current,
@@ -662,8 +664,16 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                     cameraVersionRef.current,
                     saved.camera_version,
                   )
+                  return (
+                    enabled &&
+                    saved.camera_enabled &&
+                    saved.status === "running" &&
+                    saved.state_version === stateVersionRef.current &&
+                    saved.camera_version === cameraVersion &&
+                    cameraVersionRef.current === cameraVersion
+                  )
                 })
-                .catch(() => undefined)
+                .catch(() => false)
             }}
           />
 
@@ -704,11 +714,18 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
                       key={event.id}
                       className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`size-2 rounded-full ${event.ended_at ? "bg-slate-400" : "animate-pulse bg-amber-500"}`}
-                        />
-                        <span>{eventLabel(event)}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`size-2 rounded-full ${event.ended_at ? "bg-slate-400" : "animate-pulse bg-amber-500"}`}
+                          />
+                          <span>{eventLabel(event)}</span>
+                        </div>
+                        {event.source === "cloud_vision" ? (
+                          <CloudObservationSummary
+                            observation={event.visual_observation}
+                          />
+                        ) : null}
                       </div>
                       <span className="font-mono text-xs text-slate-500">
                         {new Date(event.started_at).toLocaleTimeString(
@@ -841,8 +858,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           <Check className="mt-0.5 size-4 shrink-0" />
           <p>
             <strong>隐私状态：</strong>浏览器只向 Supabase
-            写入任务、计时和结构化事件。摄像头视频没有上传接口；关闭摄像头或离开页面会立即停止媒体轨道和
-            Worker。
+            写入任务、计时和结构化事件。默认本地观察不上传画面；仅在本次明确同意云端观察后发送抽样图片和当前任务。
+            应用不保存原始图片，服务商政策另行适用。关闭摄像头或离开页面会立即停止媒体轨道和
+            Worker，并停止云端抽样。
           </p>
         </CardContent>
       </Card>
